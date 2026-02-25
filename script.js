@@ -1,29 +1,30 @@
-/* script.js — LC Performance Coach (Synge Street) — SUBJECT PICK + CLEAR MODES
-   - Students pick their own subjects (not all)
-   - Stores H/O per subject (O blue, H pink)
-   - Subject Hub clearly separates Turbito vs Coach/Drills
-   - Charts inserted near top of hub (not bottom scroll)
-   - Uses your existing: drills.js (window.DRILL_BANK), ai.js (window.classifyAnswer), turbito.js (window.startTurbito)
+/* script.js — LC Coach + Turbito Hub (Synge Street) — FIXED UI + EASY SUBJECT PICK
+   - Students pick only their subjects (names OR numbers; no commas required)
+   - Coach button works (auto-injects coach panel into existing HTML)
+   - Clear differentiation: Turbito vs Coach/Drills inside Subject Hub
+   - Ordinary (O) = blue, Higher (H) = pink for familiarity
+   - Charts appear near top of hub (not buried)
 */
 
 (() => {
   "use strict";
 
-  const LS_KEY = "SYNGE_LC_COACH_PICKED_V1";
+  const LS_KEY = "SYNGE_LC_COACH_V5";
 
-  // Earned AI (as per your philosophy)
-  const AI_MIN_RESULTS = 2;                 // needs trend
-  const AI_MIN_SCORE_FOR_AI = 70;           // “coach enters” by performance
-  const AI_MIN_DRILL_AVG_FOR_AI = 70;       // or by intent via drills
-  const AI_COOLDOWN_MS = 60 * 60 * 1000;    // 1 hour per subject
+  // Earned AI coach
+  const AI_MIN_RESULTS = 2;
+  const AI_MIN_SCORE_FOR_AI = 70;       // performance unlock
+  const AI_MIN_DRILL_AVG_FOR_AI = 70;   // intent unlock
+  const AI_COOLDOWN_MS = 60 * 60 * 1000;
 
-  // Master list used ONLY for picking (not for dashboard)
   const SUBJECT_CATALOGUE = [
     "English","Maths","Spanish","French","German",
     "Biology","Chemistry","Physics",
     "Accounting","Economics","Business",
     "History","Geography","Home Ec","Art","PE"
   ];
+
+  const $ = (id) => document.getElementById(id);
 
   const state = loadState();
   let currentSubject = null;
@@ -35,9 +36,7 @@
   let drillChart = null;
   let resultsChart = null;
 
-  const $ = (id) => document.getElementById(id);
-
-  // ---------- Helpers ----------
+  // ---------- helpers ----------
   function esc(s){
     return String(s)
       .replaceAll("&","&amp;")
@@ -46,27 +45,23 @@
       .replaceAll('"',"&quot;")
       .replaceAll("'","&#039;");
   }
-
   function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
-
-  function avg(arr){
-    if(!arr || !arr.length) return null;
-    return arr.reduce((a,b)=>a+b,0)/arr.length;
+  function avg(arr){ return arr && arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null; }
+  function toNum(x){
+    const n = Number(String(x).replace("%","").trim());
+    return Number.isFinite(n) ? n : null;
   }
-
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]] = [arr[j],arr[i]];
+    }
+    return arr;
+  }
   function focus(el){
     if(!el) return;
-    setTimeout(() => {
-      try{
-        el.focus();
-        if(el.setSelectionRange && typeof el.value === "string"){
-          const n = el.value.length;
-          el.setSelectionRange(n,n);
-        }
-      }catch{}
-    }, 0);
+    setTimeout(()=>{ try{ el.focus(); }catch{} }, 0);
   }
-
   function band(p){
     if(p >= 90) return "H1 / O1";
     if(p >= 80) return "H2 / O1";
@@ -77,47 +72,84 @@
     if(p >= 30) return "H7 / O6";
     return "Needs lift";
   }
-
   function fmtTime(ms){
     const total = Math.floor(ms/1000);
     const m = Math.floor(total/60);
     const s = total % 60;
     return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
   }
-
-  function toNum(x){
-    const n = Number(String(x).replace("%","").trim());
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function shuffle(arr){
-    for(let i=arr.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      [arr[i],arr[j]] = [arr[j],arr[i]];
-    }
-    return arr;
-  }
-
   function levelAccent(level){
-    // Ordinary blue, Higher pink (Irish LC paper familiarity)
-    return level === "O" ? "#2b6cff" : "#ff3fa6";
+    return level === "O" ? "#2b6cff" : "#ff3fa6"; // O blue, H pink
   }
 
+  function pickedList(){
+    return state.profile.picked || [];
+  }
   function pickedSubjects(){
-    return (state.profile?.picked || []).map(p => p.subject);
+    return pickedList().map(p=>p.subject);
   }
-
   function pickedLevel(subject){
-    const p = (state.profile?.picked || []).find(x=>x.subject===subject);
+    const p = pickedList().find(x=>x.subject===subject);
     return p?.level || "H";
   }
 
-  // ---------- Init ----------
-  document.addEventListener("DOMContentLoaded", () => {
-    // cursor
+  // ---------- inject missing UI (coach boxes) ----------
+  function ensureCoachBoxes(){
+    // Dashboard coach area inside the "Add Result" card
+    const dash = $("dash");
+    if(dash && !$("coachBoxDash")){
+      const card = dash.querySelector(".card"); // first card is Add Result card in your HTML
+      if(card){
+        const div = document.createElement("div");
+        div.id = "coachBoxDash";
+        div.style.marginTop = "12px";
+        div.innerHTML = `<div class="muted">Coach: add results, then press “Coach Me”.</div>`;
+        card.appendChild(div);
+      }
+    }
+
+    // Subject hub coach area (so hub clearly has Turbito + Coach/Drills)
+    const hub = $("subjectHub");
+    if(hub && !$("coachBoxHub")){
+      const wrap = document.createElement("div");
+      wrap.id = "coachBoxHubWrap";
+      wrap.style.marginTop = "14px";
+      wrap.innerHTML = `
+        <h3 style="margin:10px 0 6px">Coach & Drills</h3>
+        <div id="coachBoxHub" class="muted" style="margin-bottom:10px">
+          Press <strong>Coach Me</strong> (on dashboard) or use the button below to coach this subject.
+        </div>
+        <button id="btnCoachThis" class="primary">Coach this subject</button>
+      `;
+      hub.appendChild(wrap);
+
+      // wire hub coach button
+      setTimeout(()=>{
+        $("btnCoachThis")?.addEventListener("click", ()=>{
+          if(currentSubject) coachThisSubject(currentSubject);
+        });
+      }, 0);
+    }
+  }
+
+  function setCoachDash(html){
+    ensureCoachBoxes();
+    const box = $("coachBoxDash");
+    if(box) box.innerHTML = html;
+  }
+
+  function setCoachHub(html){
+    ensureCoachBoxes();
+    const box = $("coachBoxHub");
+    if(box) box.innerHTML = html;
+  }
+
+  // ---------- init ----------
+  document.addEventListener("DOMContentLoaded", ()=>{
+    ensureCoachBoxes();
+
     focus($("name"));
 
-    // default date for entry (still backfillable)
     const mDate = $("mDate");
     if(mDate && !mDate.value) mDate.value = new Date().toISOString().slice(0,10);
 
@@ -126,29 +158,27 @@
     $("btnCoach")?.addEventListener("click", coachFlow);
     $("btnReset")?.addEventListener("click", resetAll);
 
-    $("btnBackToDash")?.addEventListener("click", () => {
+    $("btnBackToDash")?.addEventListener("click", ()=>{
       $("subjectHub")?.classList.add("hidden");
       $("dash")?.classList.remove("hidden");
       currentSubject = null;
     });
 
-    $("btnTurbito")?.addEventListener("click", () => {
-      if(!currentSubject) return;
-      launchTurbito(currentSubject);
+    $("btnTurbito")?.addEventListener("click", ()=>{
+      if(currentSubject) launchTurbito(currentSubject);
     });
 
-    // Drill modal
     $("btnSubmit")?.addEventListener("click", submitDrillAnswer);
     $("btnExitDrill")?.addEventListener("click", closeDrill);
 
-    $("dAnswer")?.addEventListener("keydown", (e)=>{
-      if(e.key === "Enter") submitDrillAnswer();
+    $("dAnswer")?.addEventListener("keydown",(e)=>{
+      if(e.key==="Enter") submitDrillAnswer();
     });
 
     render();
   });
 
-  // ---------- Main flow ----------
+  // ---------- subject picking (easy) ----------
   function startFlow(){
     const name = ($("name")?.value || "").trim();
     if(!name){
@@ -157,9 +187,9 @@
       return;
     }
 
-    // If not picked yet, pick now (this is “how it was” without needing new HTML)
+    // if no picked subjects yet, pick now
     if(!state.profile.picked || !state.profile.picked.length){
-      const picked = promptPickSubjects();
+      const picked = promptPickSubjectsEasy();
       if(!picked.length) return;
       state.profile.picked = picked;
     }
@@ -169,44 +199,74 @@
     render();
   }
 
-  function promptPickSubjects(){
+  function promptPickSubjectsEasy(){
+    // Accept: names ("Spanish Maths Biology") OR numbers ("2 3 6") OR mixed.
     const list = SUBJECT_CATALOGUE.map((s,i)=>`${i+1}. ${s}`).join("\n");
     const raw = prompt(
-      "Choose YOUR subjects (comma-separated numbers)\n\n" +
-      list +
-      "\n\nExample: 2,3,11",
+      "Choose your subjects.\n\n" +
+      "EASY: type subject NAMES (e.g. Spanish Maths Biology)\n" +
+      "OR type NUMBERS (e.g. 2 3 6)\n\n" +
+      list,
       ""
     );
     if(raw === null) return [];
 
-    const nums = raw.split(",").map(x=>parseInt(x.trim(),10)).filter(n=>Number.isFinite(n));
-    const uniq = [...new Set(nums)].filter(n=>n>=1 && n<=SUBJECT_CATALOGUE.length);
-    if(!uniq.length){
-      alert("No valid subjects selected.");
+    const tokens = raw
+      .replace(/and/gi," ")
+      .replace(/,/g," ")
+      .split(/\s+/)
+      .map(t=>t.trim())
+      .filter(Boolean);
+
+    const chosen = new Map(); // subject -> true
+
+    // numbers
+    tokens.forEach(t=>{
+      const n = parseInt(t,10);
+      if(Number.isFinite(n) && n>=1 && n<=SUBJECT_CATALOGUE.length){
+        chosen.set(SUBJECT_CATALOGUE[n-1], true);
+      }
+    });
+
+    // names (case-insensitive contains match)
+    tokens.forEach(t=>{
+      const low = t.toLowerCase();
+      SUBJECT_CATALOGUE.forEach(s=>{
+        if(s.toLowerCase().replace(/\s+/g,"") === low.replace(/\s+/g,"")){
+          chosen.set(s,true);
+        }
+      });
+    });
+
+    const subjects = [...chosen.keys()];
+    if(!subjects.length){
+      alert("No valid subjects detected. Try typing: Spanish Maths Biology (or 2 3 6).");
       return [];
     }
 
+    // Choose H/O per subject
     const picked = [];
-    for(const n of uniq){
-      const subject = SUBJECT_CATALOGUE[n-1];
-      const lvlRaw = prompt(`Level for ${subject}? Type H or O`, "H");
+    for(const s of subjects){
+      const lvlRaw = prompt(`Level for ${s}? Type H or O`, "H");
       const lvl = String(lvlRaw||"H").trim().toUpperCase()==="O" ? "O" : "H";
-      picked.push({ subject, level:lvl });
+      picked.push({ subject:s, level:lvl });
     }
-
     return picked;
   }
 
+  // ---------- render ----------
   function render(){
+    ensureCoachBoxes();
+
     const hasName = !!(state.profile.name || "").trim();
     $("setup")?.classList.toggle("hidden", hasName);
     $("dash")?.classList.toggle("hidden", !hasName);
 
-    $("whoName") && ($("whoName").textContent = state.profile.name || "—");
+    if(!hasName) return;
 
-    // If they have name but no subjects yet, force pick (once)
-    if(hasName && (!state.profile.picked || !state.profile.picked.length)){
-      const picked = promptPickSubjects();
+    // If name exists but no picked subjects (old data), prompt once
+    if(!state.profile.picked || !state.profile.picked.length){
+      const picked = promptPickSubjectsEasy();
       if(picked.length){
         state.profile.picked = picked;
         saveState();
@@ -215,14 +275,14 @@
 
     renderOverall();
     renderTiles();
+
+    setCoachDash(`<div class="muted">Add results (you can backfill older dates). Then press <strong>Coach Me</strong>.</div>`);
   }
 
   function renderOverall(){
     const subs = pickedSubjects();
     const all = [];
-    subs.forEach(s=>{
-      (state.results[s] || []).forEach(r=> all.push(r.score));
-    });
+    subs.forEach(s => (state.results[s]||[]).forEach(r=>all.push(r.score)));
     const overall = all.length ? Math.round(avg(all)) : null;
 
     $("overallAvg") && ($("overallAvg").textContent = overall===null ? "—" : `${overall}%`);
@@ -230,23 +290,26 @@
 
     let recovered = 0;
     subs.forEach(s=>{
-      const arr = (state.results[s] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-      if(arr.length >= 2) recovered += (arr[arr.length-1].score - arr[0].score);
+      const arr = (state.results[s]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      if(arr.length>=2) recovered += (arr[arr.length-1].score - arr[0].score);
     });
     $("marksRecovered") && ($("marksRecovered").textContent = String(recovered));
   }
 
-  function starsForSubject(subject){
-    const drills = (state.drillScores?.[subject] || []).slice(-5);
-    const drillAvg = drills.length ? Math.round(avg(drills.map(d=>d.pct))) : null;
+  function lastDrillAvg(subject, n=5){
+    const d = (state.drillScores?.[subject] || []).slice(-n);
+    return d.length ? Math.round(avg(d.map(x=>x.pct))) : null;
+  }
 
-    const res = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    const trend = (res.length >= 2) ? (res[res.length-1].score - res[0].score) : 0;
+  function starsForSubject(subject){
+    const drillAvg = lastDrillAvg(subject, 5);
+    const res = (state.results[subject]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    const trend = res.length>=2 ? (res[res.length-1].score - res[0].score) : 0;
 
     let score = 0;
     if(drillAvg !== null) score += Math.round(clamp(drillAvg,0,100)/100*7);
     score += Math.round(clamp((trend/15)*3, -3, 3));
-    score = clamp(score, 0, 10);
+    score = clamp(score,0,10);
 
     return "★".repeat(score) + "☆".repeat(10-score);
   }
@@ -256,15 +319,13 @@
     if(!tiles) return;
     tiles.innerHTML = "";
 
-    const picked = state.profile.picked || [];
-    picked.forEach(({subject, level})=>{
-      const arr = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    pickedList().forEach(({subject, level})=>{
+      const arr = (state.results[subject]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
       const avgScore = arr.length ? Math.round(avg(arr.map(r=>r.score))) : null;
       const last = arr.length ? arr[arr.length-1] : null;
-
       const fill = avgScore===null ? 0 : clamp(avgScore,0,100);
-      const stars = starsForSubject(subject);
       const accent = levelAccent(level);
+      const stars = starsForSubject(subject);
 
       const tile = document.createElement("div");
       tile.className = "tile";
@@ -287,27 +348,93 @@
     });
   }
 
-  // ---------- Subject Hub ----------
+  // ---------- dashboard subject picking for add/coach (easy) ----------
+  function promptPickFromChosen(label){
+    const chosen = pickedSubjects();
+    const list = chosen.map((s,i)=>`${i+1}. ${s}`).join("\n");
+    const raw = prompt(`${label}\n\nType NAME (e.g. Spanish) OR NUMBER (e.g. 2)\n\n${list}`, "");
+    if(raw === null) return null;
+
+    const t = raw.trim();
+    if(!t) return null;
+
+    const n = parseInt(t,10);
+    if(Number.isFinite(n) && n>=1 && n<=chosen.length) return chosen[n-1];
+
+    // name match
+    const low = t.toLowerCase().replace(/\s+/g,"");
+    const found = chosen.find(s=> s.toLowerCase().replace(/\s+/g,"") === low);
+    if(found) return found;
+
+    alert("Not recognised. Type a subject name or its number.");
+    return null;
+  }
+
+  // ---------- add result ----------
+  function addResultFlow(){
+    if(!(state.profile.name||"").trim()){
+      alert("Enter a nickname first.");
+      focus($("name"));
+      return;
+    }
+    if(!pickedSubjects().length){
+      alert("Press Start and pick subjects first.");
+      return;
+    }
+
+    const subject = promptPickFromChosen("Add Result — which subject?");
+    if(!subject) return;
+
+    const date = ($("mDate")?.value || "").trim() || new Date().toISOString().slice(0,10);
+
+    const raw = prompt(`Enter ${subject} overall % (0–100)`, "");
+    if(raw === null) return;
+    const score = toNum(raw);
+    if(score === null || score<0 || score>100){
+      alert("Please enter a number between 0 and 100.");
+      return;
+    }
+
+    state.results[subject] = state.results[subject] || [];
+    state.results[subject].push({ date, score: Math.round(score) });
+    state.results[subject].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    saveState();
+
+    renderOverall();
+    renderTiles();
+
+    setCoachDash(`<div><strong>${esc(subject)}</strong> saved: ${esc(date)} • ${Math.round(score)}%</div><div class="muted">Now press <strong>Coach Me</strong> for the mark-leak drill.</div>`);
+
+    if(currentSubject === subject) renderHubChartsNearTop(subject);
+  }
+
+  // ---------- subject hub ----------
   function openSubject(subject){
     currentSubject = subject;
-    const level = pickedLevel(subject);
-    const accent = levelAccent(level);
 
     $("dash")?.classList.add("hidden");
     $("subjectHub")?.classList.remove("hidden");
-    $("subjectTitle") && ($("subjectTitle").textContent = `${subject} (${level})`);
 
-    // Differentiate: set a clear top note (without redesign)
-    injectHubHeaderNote(subject, level, accent);
+    const lvl = pickedLevel(subject);
+    const accent = levelAccent(lvl);
 
-    // Turbito loads immediately, and button also exists
+    $("subjectTitle") && ($("subjectTitle").textContent = `${subject} (${lvl})`);
+
+    // color-cue buttons (no CSS edits)
+    if($("btnTurbito")) $("btnTurbito").style.background = accent;
+    if($("btnBackToDash")) $("btnBackToDash").style.borderColor = accent;
+
+    // clear separation note at top
+    ensureHubNote(subject, lvl, accent);
+
+    // charts near top (so not “far away”)
+    renderHubChartsNearTop(subject);
+
+    // turbito should render levels
     launchTurbito(subject);
-
-    // Charts near TOP (insert before turbito container)
-    renderSubjectChartsNearTop(subject);
   }
 
-  function injectHubHeaderNote(subject, level, accent){
+  function ensureHubNote(subject, lvl, accent){
     const hub = $("subjectHub");
     if(!hub) return;
 
@@ -320,165 +447,128 @@
       note.style.borderRadius = "14px";
       note.style.background = "rgba(255,255,255,.75)";
       note.style.boxShadow = "0 6px 18px rgba(0,0,0,.08)";
-      // insert at top of hub content
       hub.insertBefore(note, hub.firstChild);
     }
-
     note.innerHTML = `
-      <div style="font-weight:900;color:${accent}">${esc(subject)} • ${level==="O"?"Ordinary (Blue)":"Higher (Pink)"}</div>
-      <div class="muted">Turbito = fast recall/high score. Coach/Drills = fix the mark leaks.</div>
+      <div style="font-weight:900;color:${accent}">${esc(subject)} • ${lvl==="O"?"Ordinary (Blue)":"Higher (Pink)"}</div>
+      <div class="muted"><strong>Turbito</strong> = fast recall/high score. <strong>Coach & Drills</strong> = fix mark leaks.</div>
     `;
-
-    // accent the hub buttons (no CSS edits, just inline)
-    const bT = $("btnTurbito");
-    const bB = $("btnBackToDash");
-    if(bT) bT.style.background = accent;
-    if(bB) bB.style.borderColor = accent;
   }
 
-  // ---------- Result entry ----------
-  function addResultFlow(){
-    if(!(state.profile.name || "").trim()){
-      alert("Enter a nickname first.");
-      focus($("name"));
-      return;
-    }
-    if(!state.profile.picked || !state.profile.picked.length){
-      alert("Pick subjects first (press Start).");
-      return;
+  // ---------- charts near top ----------
+  function renderHubChartsNearTop(subject){
+    ensureCoachBoxes();
+
+    const hub = $("subjectHub");
+    const turbitoContainer = $("turbitoContainer");
+    if(!hub || !turbitoContainer) return;
+
+    let wrap = $("hubChartsTop");
+    if(!wrap){
+      wrap = document.createElement("div");
+      wrap.id = "hubChartsTop";
+      wrap.style.margin = "10px 0";
+      hub.insertBefore(wrap, turbitoContainer); // BEFORE Turbito so it’s near the top
+      wrap.innerHTML = `
+        <div style="display:grid;gap:14px">
+          <div>
+            <h3 style="margin:6px 0">Results Trend</h3>
+            <canvas id="resultsChart" height="120"></canvas>
+          </div>
+          <div>
+            <h3 style="margin:6px 0">Drill Streak</h3>
+            <div class="muted" style="margin-bottom:6px">Intent earns the coach.</div>
+            <canvas id="drillChart" height="120"></canvas>
+          </div>
+        </div>
+      `;
     }
 
-    // pick from ONLY chosen subjects
-    const subject = promptPickFromChosen();
+    renderResultsChart(subject);
+    renderDrillChart(subject);
+  }
+
+  function renderResultsChart(subject){
+    const canvas = $("resultsChart");
+    if(!canvas || typeof Chart !== "function") return;
+
+    const arr = (state.results[subject]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||"")).slice(-12);
+    const labels = arr.map(r=> (r.date ? r.date.slice(5) : ""));
+    const values = arr.map(r=> r.score);
+
+    if(resultsChart) resultsChart.destroy();
+    resultsChart = new Chart(canvas, {
+      type:"line",
+      data:{ labels, datasets:[{ data:values, fill:true, tension:0.25, borderColor:"#1f7a4c", backgroundColor:"rgba(31,122,76,.18)", pointRadius:4 }] },
+      options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ min:0, max:100 } } }
+    });
+  }
+
+  function renderDrillChart(subject){
+    const canvas = $("drillChart");
+    if(!canvas || typeof Chart !== "function") return;
+
+    const arr = (state.drillScores?.[subject] || []).slice(-12);
+    const labels = arr.map(d=> (d.date ? d.date.slice(5) : ""));
+    const values = arr.map(d=> d.pct);
+
+    if(drillChart) drillChart.destroy();
+    drillChart = new Chart(canvas, {
+      type:"line",
+      data:{ labels, datasets:[{ data:values, fill:true, tension:0.25, borderColor:"#1f7a4c", backgroundColor:"rgba(31,122,76,.18)", pointRadius:4 }] },
+      options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ min:0, max:100 } } }
+    });
+  }
+
+  // ---------- coach ----------
+  function coachFlow(){
+    const subject = promptPickFromChosen("Coach Me — which subject?");
     if(!subject) return;
-
-    const date = ($("mDate")?.value || "").trim() || new Date().toISOString().slice(0,10);
-
-    let raw = prompt(`Enter ${subject} overall % (0–100). Example: 62`, "");
-    if(raw === null) return;
-    const score = toNum(raw);
-    if(score === null || score < 0 || score > 100){
-      alert("Please enter a number between 0 and 100.");
-      return;
-    }
-
-    addResult(subject, date, Math.round(score));
-    renderOverall();
-    renderTiles();
-
-    if(currentSubject === subject) renderSubjectChartsNearTop(subject);
+    coachThisSubject(subject);
   }
 
-  function promptPickFromChosen(){
-    const chosen = pickedSubjects();
-    const list = chosen.map((s,i)=>`${i+1}. ${s}`).join("\n");
-    const raw = prompt("Which of YOUR subjects?\n\n" + list + "\n\nType a number", "");
-    if(raw === null) return null;
-    const n = parseInt(raw.trim(), 10);
-    if(!Number.isFinite(n) || n<1 || n>chosen.length){
-      alert("Not a valid subject number.");
-      return null;
-    }
-    return chosen[n-1];
-  }
-
-  function addResult(subject, date, score){
-    state.results[subject] = state.results[subject] || [];
-    state.results[subject].push({ date, score });
-    state.results[subject].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    saveState();
-  }
-
-  // ---------- Coach / AI ----------
-  async function coachFlow(){
-    if(!(state.profile.name || "").trim()){
-      alert("Enter a nickname first.");
-      focus($("name"));
-      return;
-    }
-    if(!state.profile.picked || !state.profile.picked.length){
-      alert("Pick subjects first (press Start).");
-      return;
-    }
-
-    const subject = promptPickFromChosen();
-    if(!subject) return;
-
-    const arr = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  async function coachThisSubject(subject){
+    const arr = (state.results[subject]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
     if(arr.length < 2){
-      alert(`Add at least two results for ${subject} first (trend needed).`);
+      const msg = `<div class="muted">Add at least two results for <strong>${esc(subject)}</strong> so coach can see a trend.</div>`;
+      setCoachDash(msg);
+      setCoachHub(msg);
       return;
     }
 
     const heuristic = heuristicFocus(subject, arr);
-    const prescribed = buildPrescribedDrill(subject, heuristic);
+    const pack = buildPrescribedDrill(subject, heuristic);
 
     const aiAllowed = aiUnlockedFor(subject, arr.length);
 
-    showCoachPanel(subject, heuristic, prescribed, aiAllowed);
+    showCoachPanels(subject, heuristic, pack, aiAllowed, false);
 
     if(aiAllowed){
       try{
         const ai = await runAiCoach(subject, arr, heuristic);
         if(ai){
           const drills = normalizeAiDrills(ai.drills);
-          const mergedPack = {
+          const aiPack = {
             title: `${subject} • AI Prescribed`,
-            items: drills.length ? drills.slice(0,10).map(q=>({q, a:["*"]})) : prescribed.items
+            items: drills.length ? drills.slice(0,10).map(q=>({q, a:["*"]})) : pack.items
           };
-          showCoachPanel(subject, {
-            focus: ai.focus || heuristic.focus,
-            feedback: ai.feedback || heuristic.feedback,
-            mode: heuristic.mode
-          }, mergedPack, true, true);
+          showCoachPanels(subject, { focus: ai.focus || heuristic.focus, feedback: ai.feedback || heuristic.feedback, mode: heuristic.mode }, aiPack, true, true);
           markAiUsed(subject);
         }
       }catch(e){
+        // keep heuristic output
         console.warn(e);
       }
     }
   }
 
-  function lastDrillAvg(subject, n=5){
-    const drills = (state.drillScores?.[subject] || []).slice(-n);
-    if(!drills.length) return null;
-    return Math.round(avg(drills.map(d=>d.pct)));
-  }
-
-  function aiUnlockedFor(subject, resultsCount){
-    if(resultsCount < AI_MIN_RESULTS) return false;
-
-    const arr = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    const latest = arr[arr.length-1];
-    const drillAvg = lastDrillAvg(subject, 5);
-
-    const earned = (latest.score >= AI_MIN_SCORE_FOR_AI) || (drillAvg !== null && drillAvg >= AI_MIN_DRILL_AVG_FOR_AI);
-    if(!earned) return false;
-
-    const now = Date.now();
-    const last = state.aiLastAt?.[subject] || 0;
-    if(now - last < AI_COOLDOWN_MS) return false;
-
-    return typeof window.classifyAnswer === "function";
-  }
-
-  function markAiUsed(subject){
-    state.aiLastAt = state.aiLastAt || {};
-    state.aiLastAt[subject] = Date.now();
-    saveState();
-  }
-
-  function showCoachPanel(subject, focusObj, pack, aiAllowed, aiUsed=false){
-    const coachOut = $("coachBox");
-    if(!coachOut) return;
-
-    const drillPreview = (pack.items || []).slice(0,4).map(x=>`<li>${esc(x.q)}</li>`).join("");
-
+  function showCoachPanels(subject, focusObj, pack, aiAllowed, aiUsed){
+    const drillPreview = (pack.items||[]).slice(0,4).map(x=>`<li>${esc(x.q)}</li>`).join("");
     const lockLine = aiAllowed
-      ? `<div class="muted">${aiUsed ? "AI coach active." : `Coach enters now (earned). Running AI...`}</div>`
-      : `<div class="muted">Coach (AI) enters at ≥ <strong>${AI_MIN_SCORE_FOR_AI}%</strong> OR drill intent avg ≥ <strong>${AI_MIN_DRILL_AVG_FOR_AI}%</strong>.</div>`;
+      ? `<div class="muted">${aiUsed ? "AI coach active." : "Coach enters now (earned). Running AI..."}</div>`
+      : `<div class="muted">AI coach enters at ≥ <strong>${AI_MIN_SCORE_FOR_AI}%</strong> OR drill avg ≥ <strong>${AI_MIN_DRILL_AVG_FOR_AI}%</strong>.</div>`;
 
-    coachOut.innerHTML = `
+    const html = `
       <div><strong>${esc(subject)} Coach</strong></div>
       ${lockLine}
       <div style="margin-top:10px"><strong>Biggest mark leak:</strong> ${esc(focusObj.focus)}</div>
@@ -486,12 +576,17 @@
       <div style="margin-top:10px"><strong>Prescribed drill (10):</strong></div>
       <ul>${drillPreview}</ul>
       <div style="margin-top:10px">
-        <button id="btnStartPrescribed" class="primary">Start Prescribed Drill (10)</button>
+        <button id="btnStartPrescribedDash" class="primary">Start Drill (10)</button>
       </div>
     `;
 
+    setCoachDash(html);
+    setCoachHub(html.replace('btnStartPrescribedDash','btnStartPrescribedHub'));
+
+    // wire both buttons
     setTimeout(()=>{
-      $("btnStartPrescribed")?.addEventListener("click", ()=> startDrill(subject, pack));
+      $("btnStartPrescribedDash")?.addEventListener("click", ()=> startDrill(subject, pack));
+      $("btnStartPrescribedHub")?.addEventListener("click", ()=> startDrill(subject, pack));
     }, 0);
   }
 
@@ -501,17 +596,17 @@
     const delta = last.score - prev.score;
 
     const mode = last.score < 55 ? "build" : (last.score < 75 ? "strength" : "exam");
-    const modeLabel = mode === "build" ? "Build Mode" : (mode === "strength" ? "Strength Mode" : "Exam Mode");
+    const modeLabel = mode==="build" ? "Build Mode" : mode==="strength" ? "Strength Mode" : "Exam Mode";
 
     let focus = "Paper structure + timing";
     let feedback = `You’re in ${modeLabel}. `;
 
     if(delta < 0){
       focus = "Stability: remove silly drops";
-      feedback += `Down ${Math.abs(delta)}. Next win: no blanks, clean method marks, repeat a tight routine.`;
+      feedback += `Down ${Math.abs(delta)}. Next win: no blanks, clean method marks, repeat tight routine.`;
     }else if(delta > 0){
       focus = "Convert improvement into consistency";
-      feedback += `Up ${delta}. Now repeat what worked and add one targeted rep set weekly.`;
+      feedback += `Up ${delta}. Repeat what worked and add targeted reps weekly.`;
     }else{
       feedback += "Flat. Pick one weakness and do 10 reps, then re-test.";
     }
@@ -531,19 +626,16 @@
   }
 
   function buildPrescribedDrill(subject, focusObj){
-    // For Turbito-style short-form reps, we use DRILL_BANK[subject].rapid if available.
-    // For coach drills, use build/strength/exam based on mode.
     const bank = window.DRILL_BANK?.[subject];
-    const cat = (focusObj.mode === "build") ? "build" : (focusObj.mode === "strength" ? "strength" : "exam");
+    const cat = focusObj.mode === "build" ? "build" : focusObj.mode === "strength" ? "strength" : "exam";
 
     let items = [];
     if(bank){
       const arr = bank[cat] || bank.rapid || bank.build || bank.strength || bank.exam || [];
       if(Array.isArray(arr) && arr.length){
-        items = shuffle(arr.slice()).slice(0, 10);
+        items = shuffle(arr.slice()).slice(0,10);
       }
     }
-
     if(!items.length){
       items = [
         { q:`${subject}: 3 key definitions (no notes)`, a:["*"] },
@@ -558,8 +650,30 @@
         { q:`${subject}: “no blanks” rule`, a:["*"] }
       ];
     }
-
     return { title: `${subject} • ${cat.toUpperCase()} Drill`, items };
+  }
+
+  function aiUnlockedFor(subject, resultsCount){
+    if(resultsCount < AI_MIN_RESULTS) return false;
+
+    const arr = (state.results[subject]||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    const latest = arr[arr.length-1];
+    const drillAvg = lastDrillAvg(subject, 5);
+
+    const earned = (latest.score >= AI_MIN_SCORE_FOR_AI) || (drillAvg !== null && drillAvg >= AI_MIN_DRILL_AVG_FOR_AI);
+    if(!earned) return false;
+
+    const now = Date.now();
+    const last = state.aiLastAt?.[subject] || 0;
+    if(now - last < AI_COOLDOWN_MS) return false;
+
+    return typeof window.classifyAnswer === "function";
+  }
+
+  function markAiUsed(subject){
+    state.aiLastAt = state.aiLastAt || {};
+    state.aiLastAt[subject] = Date.now();
+    saveState();
   }
 
   async function runAiCoach(subject, arr, fallback){
@@ -571,8 +685,8 @@
       `Subject: ${subject}`,
       `Previous: ${prev.date} — ${prev.score}%`,
       `Latest: ${last.date} — ${last.score}%`,
-      "Identify the single biggest mark leak (where the student is losing the most marks) and prescribe a drill.",
-      "Constraints: practical, short, no essays. 10–20 mins.",
+      "Identify the single biggest mark leak (where marks are being lost) and prescribe drills.",
+      "Constraints: practical, short, no essays. Drills 10–20 mins.",
       "",
       "Return ONLY JSON:",
       "{",
@@ -587,7 +701,7 @@
 
     return {
       focus: String(res.focus || fallback.focus || "—").slice(0,120),
-      feedback: String(res.feedback || fallback.feedback || "—").slice(0,500),
+      feedback: String(res.feedback || fallback.feedback || "—").slice(0,600),
       drills: Array.isArray(res.drills) ? res.drills.map(x=>String(x)) : []
     };
   }
@@ -597,7 +711,7 @@
     return drills.map(d=>String(d).trim()).filter(Boolean);
   }
 
-  // ---------- Drill modal ----------
+  // ---------- drill modal ----------
   function startDrill(subject, pack){
     drillRun = {
       subject,
@@ -607,7 +721,6 @@
       correct: 0,
       startedAt: Date.now()
     };
-
     $("drillModal")?.classList.remove("hidden");
     showDrillPrompt();
   }
@@ -657,20 +770,16 @@
     state.drillScores = state.drillScores || {};
     state.drillScores[drillRun.subject] = state.drillScores[drillRun.subject] || [];
     state.drillScores[drillRun.subject].push({ date: new Date().toISOString().slice(0,10), pct });
-
     if(state.drillScores[drillRun.subject].length > 30){
       state.drillScores[drillRun.subject] = state.drillScores[drillRun.subject].slice(-30);
     }
-
     saveState();
 
     alert(`${drillRun.subject} drill complete: ${pct}% • Time: ${fmtTime(ms)}`);
     closeDrill();
 
-    if(currentSubject === drillRun.subject){
-      renderSubjectChartsNearTop(currentSubject);
-    }
-    renderTiles();
+    render();
+    if(currentSubject === drillRun.subject) renderHubChartsNearTop(currentSubject);
   }
 
   function closeDrill(){
@@ -678,108 +787,18 @@
     drillRun = null;
   }
 
-  // ---------- Charts near top ----------
-  function renderSubjectChartsNearTop(subject){
-    const hub = $("subjectHub");
-    const anchor = $("turbitoContainer") || hub?.firstChild;
-    if(!hub || !anchor) return;
-
-    // wrappers (create once)
-    let topWrap = $("hubChartsTop");
-    if(!topWrap){
-      topWrap = document.createElement("div");
-      topWrap.id = "hubChartsTop";
-      topWrap.style.margin = "10px 0";
-      // insert BEFORE turbito container so it’s not “far away”
-      hub.insertBefore(topWrap, anchor);
-      topWrap.innerHTML = `
-        <div style="display:grid;gap:14px">
-          <div>
-            <h3 style="margin:6px 0">Results Trend</h3>
-            <canvas id="resultsChart" height="120"></canvas>
-          </div>
-          <div>
-            <h3 style="margin:6px 0">Drill Streak</h3>
-            <div class="muted" style="margin-bottom:6px">Intent earns the coach.</div>
-            <canvas id="drillChart" height="120"></canvas>
-          </div>
-        </div>
-      `;
-    }
-
-    renderResultsChart(subject);
-    renderDrillChart(subject);
-  }
-
-  function renderResultsChart(subject){
-    const canvas = $("resultsChart");
-    if(!canvas || typeof Chart !== "function") return;
-
-    const arr = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||"")).slice(-12);
-    const labels = arr.map(r => (r.date ? r.date.slice(5) : ""));
-    const values = arr.map(r => r.score);
-
-    if(resultsChart) resultsChart.destroy();
-    resultsChart = new Chart(canvas, {
-      type:"line",
-      data:{
-        labels,
-        datasets:[{
-          data: values,
-          fill:true,
-          tension:0.25,
-          borderColor:"#1f7a4c",
-          backgroundColor:"rgba(31,122,76,.18)",
-          pointRadius:4
-        }]
-      },
-      options:{
-        responsive:true,
-        plugins:{ legend:{ display:false } },
-        scales:{ y:{ min:0, max:100 } }
-      }
-    });
-  }
-
-  function renderDrillChart(subject){
-    const canvas = $("drillChart");
-    if(!canvas || typeof Chart !== "function") return;
-
-    const arr = (state.drillScores?.[subject] || []).slice(-12);
-    const labels = arr.map(d => (d.date ? d.date.slice(5) : ""));
-    const values = arr.map(d => d.pct);
-
-    if(drillChart) drillChart.destroy();
-    drillChart = new Chart(canvas, {
-      type:"line",
-      data:{
-        labels,
-        datasets:[{
-          data: values,
-          fill:true,
-          tension:0.25,
-          borderColor:"#1f7a4c",
-          backgroundColor:"rgba(31,122,76,.18)",
-          pointRadius:4
-        }]
-      },
-      options:{
-        responsive:true,
-        plugins:{ legend:{ display:false } },
-        scales:{ y:{ min:0, max:100 } }
-      }
-    });
-  }
-
-  // ---------- Turbito ----------
+  // ---------- turbito ----------
   function launchTurbito(subject){
-    // If turbito.js is improved (below), it will now pull real questions from DRILL_BANK
+    // IMPORTANT: if startTurbito is missing, we show that message in the container (not at bottom).
+    const c = $("turbitoContainer");
     if(typeof window.startTurbito === "function"){
       window.startTurbito(subject);
+    }else{
+      if(c) c.innerHTML = `<div class="muted">Turbito not loaded. Check turbito.js is present and linked.</div>`;
     }
   }
 
-  // ---------- Storage ----------
+  // ---------- storage ----------
   function fresh(){
     return {
       profile: { name:"", picked:[] },
@@ -815,7 +834,6 @@
     location.reload();
   }
 
-  // Debug handle
   window.__LC_STATE__ = state;
 
 })();
