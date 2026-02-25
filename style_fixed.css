@@ -1,0 +1,32 @@
+:root{--blue:#2a74ff;--green:#00c88a;--gold:#ffb800;--bg:#eef5ff;--card:#fff;--text:#1c2738;--line:#dbe8ff}
+*{box-sizing:border-box} body{margin:0;font-family:Segoe UI,system-ui;background:var(--bg);color:var(--text);overflow-x:hidden}
+.bg{position:fixed;inset:0;background:linear-gradient(135deg,#eaf2ff,#d3e3ff,#ecf7ff);background-size:200% 200%;animation:move 14s infinite alternate ease-in-out;z-index:-3}
+@keyframes move{from{background-position:0% 50%}to{background-position:100% 50%}}
+.crest{position:fixed;inset:0;background:url("crest.png") center/320px no-repeat;opacity:.10;z-index:-2;pointer-events:none}
+.app{max-width:1100px;margin:auto;padding:20px}
+header{text-align:center;margin-bottom:18px} h1{font-size:34px;font-weight:900;margin:0} .tag{opacity:.75;margin-top:6px}
+.card,.cardLite{background:var(--card);border-radius:20px;padding:18px;box-shadow:0 12px 30px rgba(0,0,0,.08);margin-bottom:18px}
+.cardLite{padding:14px;border:1px solid #eef3ff;box-shadow:none}
+.hidden{display:none!important}.muted{opacity:.72}
+input,select,button{font:inherit}
+input,select{width:100%;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:#fff;margin-bottom:10px}
+input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(42,116,255,.12)}
+button{border:none;background:#edf3ff;color:#123;border-radius:14px;padding:10px 14px;font-weight:700;cursor:pointer}
+button:hover{transform:translateY(-1px)} button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.primary{background:linear-gradient(135deg,var(--green),var(--blue));color:#fff;box-shadow:0 8px 20px rgba(0,0,0,.14)}
+.rowBtns{display:flex;gap:10px;flex-wrap:wrap}.rowBetween{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}.stat{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 10px 24px rgba(0,0,0,.06)}.stat div{font-size:30px;font-weight:900;color:var(--green);margin-top:4px}
+.pickerWrap{border:1px solid var(--line);border-radius:14px;padding:12px;margin:8px 0 12px}.pickerWrap h3{margin:0 0 10px 0;font-size:16px}
+.pickRow{display:grid;grid-template-columns:1fr 160px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #e8efff}.pickRow:last-child{border-bottom:none}.pickRow label{display:flex;align-items:center;gap:8px}.pickRow input[type=checkbox]{width:auto;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.tile{background:#fff;border-radius:18px;padding:14px;box-shadow:0 10px 24px rgba(0,0,0,.07);cursor:pointer;transition:.15s}.tile:hover{transform:translateY(-3px)}
+.tileTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.tileName{font-weight:900;font-size:18px}.tileMeta{font-size:12px;opacity:.72}.bar{height:10px;background:#e9f0ff;border-radius:999px;margin-top:10px;overflow:hidden}.fill{height:100%;background:linear-gradient(90deg,var(--green),var(--blue))}
+.turbitoGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.turbito-level{padding:12px;border-radius:12px;background:#fff;border:1px solid #dce7ff}.turbito-level.locked{background:#f5f7fb}
+.overlay{position:fixed;inset:0;background:rgba(10,20,40,.48);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50}.modalCard{width:min(980px,95vw);max-height:92vh;overflow:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.sectionBox{margin:10px 0}.sectionItem{border:1px solid #e8efff;border-radius:12px;padding:10px;margin-bottom:8px}.sectionHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.sectionLbl{font-weight:700}.sectionW{font-size:12px;opacity:.7}
+.drillControls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.drillControls select{width:auto;min-width:120px;margin:0}
+.drillStats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}.prompt{font-size:20px;font-weight:800;padding:14px;border-radius:14px;background:#f4f8ff;margin:10px 0}.hint{background:#fff8d8;border:1px solid #f0de8a;padding:10px;border-radius:12px;margin-bottom:10px}
+.confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:60}
+#chart{width:100%;background:#fff;border-radius:10px}
+footer{text-align:center;margin-top:24px;font-weight:700;opacity:.7}
+@media (max-width:760px){.stats,.grid2{grid-template-columns:1fr}.pickRow{grid-template-columns:1fr}.crest{background-size:220px}}
