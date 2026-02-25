@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>LC Performance Coach</title>
-  <link rel="stylesheet" href="style_fixed.css" />
+  <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
         <div id="subjectPicker"></div>
       </div>
 
-      <button id="btnStart" class="primary">Enter</button>
+      <button id="btnStart" type="button" class="primary">Enter</button>
     </section>
 
     <section id="who" class="card hidden">
@@ -168,7 +168,7 @@
 
   <script src="ai.js"></script>
   <script src="drills.js"></script>
-  <script src="script_fixed.js"></script>
+  <script src="script.js"></script>
   <script src="turbito.js"></script>
   <script>
     // Bridge buttons that exist in the modal to the existing handlers
@@ -192,25 +192,6 @@
       if(mDate && proxy){
         const sync=()=>{ proxy.value = mDate.value; };
         mDate.addEventListener('input', sync); sync();
-      }
-    });
-  </script>
-
-  <script>
-    window.addEventListener("error", (e)=>{
-      console.error("Page error:", e.message);
-      const btn = document.getElementById("btnStart");
-      if(btn){ btn.title = "JS error: " + e.message; }
-    });
-    document.addEventListener("DOMContentLoaded", ()=>{
-      const btn = document.getElementById("btnStart");
-      const name = document.getElementById("name");
-      if(btn && name){
-        btn.addEventListener("click", ()=>{
-          if(!name.value.trim()){ alert("Type a nickname first."); return; }
-          const checked = document.querySelectorAll('input[type=checkbox][data-sub]:checked').length;
-          if(!checked){ alert("Pick at least one subject."); }
-        }, true);
       }
     });
   </script>

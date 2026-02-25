@@ -64,7 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Turbito button
   document.getElementById("btnTurbito").onclick = function(){
     if(currentKey){
-      startTurbito(currentKey);
+      if (typeof window.startTurbito === "function") window.startTurbito(currentKey);
+      else alert("Turbito file not loaded.");
     }
   };
 
@@ -132,7 +133,7 @@ function renderPicker(){
 function start(){
   const name = byId("name").value.trim();
   const goal = byId("goal").value.trim();
-  if(!name) return;
+  if(!name){ alert("Type a nickname first."); return; }
 
   const picked = [];
   document.querySelectorAll("input[type=checkbox][data-sub]").forEach(cb=>{
