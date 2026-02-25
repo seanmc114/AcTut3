@@ -77,7 +77,12 @@ function wire(){
     if(el) el.addEventListener("click", handler);
   };
 
-  safeClick("btnStart", start);
+  const startBtn = byId("btnStart");
+  if(startBtn){
+    startBtn.addEventListener("click", (e)=>{ e.preventDefault(); start(); });
+    startBtn.addEventListener("pointerup", (e)=>{ e.preventDefault(); start(); });
+    startBtn.onclick = (e)=>{ if(e) e.preventDefault(); start(); };
+  }
   safeClick("btnClose", closeModal);
   safeClick("btnAdd", addResult);
   safeClick("btnCoach", coachMe);
@@ -901,3 +906,5 @@ function shuffle(arr){
 
 
 window.openModal = openModal;
+
+window.start = start;

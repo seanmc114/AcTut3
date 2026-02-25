@@ -195,5 +195,17 @@
       }
     });
   </script>
+
+  <script>
+    window.addEventListener('load', ()=>{
+      const b = document.getElementById('btnStart');
+      if(b && !b.__fallbackBound){
+        b.__fallbackBound = true;
+        b.addEventListener('click', (e)=>{
+          if(window.start){ e.preventDefault(); window.start(); }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
