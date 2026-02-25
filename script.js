@@ -6,7 +6,6 @@
 
 const LS_KEY = "SYNGE_LC_COACH_V2";
 let state = loadState();
-window.state = state;
 let currentKey = null;
 let chart = null;
 
@@ -40,10 +39,13 @@ document.addEventListener("DOMContentLoaded", () => {
   renderPicker();
 
   const today = new Date().toISOString().slice(0,10);
-  byId("mDate").value = today;
+  const mDateEl = byId("mDate");
+  if(mDateEl && !mDateEl.value) mDateEl.value = today;
 
- showSetup();
+  showSetup();
+  focusEl("name");
 });
+
 // ========= SUBJECT HUB CONTROL =========
 
 function openSubjectHub(subject){
@@ -64,25 +66,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // Turbito button
   document.getElementById("btnTurbito").onclick = function(){
     if(currentKey){
-      if (typeof window.startTurbito === "function") window.startTurbito(currentKey);
-      else alert("Turbito file not loaded.");
+      startTurbito(currentKey);
     }
   };
 
 });
-function wire(){
 
+function wire(){
   const safeClick = (id, handler) => {
     const el = byId(id);
     if(el) el.addEventListener("click", handler);
   };
 
-  const startBtn = byId("btnStart");
-  if(startBtn){
-    startBtn.addEventListener("click", (e)=>{ e.preventDefault(); start(); });
-    startBtn.addEventListener("pointerup", (e)=>{ e.preventDefault(); start(); });
-    startBtn.onclick = (e)=>{ if(e) e.preventDefault(); start(); };
-  }
+  safeClick("btnStart", start);
   safeClick("btnClose", closeModal);
   safeClick("btnAdd", addResult);
   safeClick("btnCoach", coachMe);
@@ -105,6 +101,7 @@ function showSetup(){
   byId("dash").classList.add("hidden");
   byId("who").classList.add("hidden");
 }
+
 function showDash(){
   byId("setup").classList.add("hidden");
   byId("dash").classList.remove("hidden");
@@ -138,7 +135,12 @@ function renderPicker(){
 function start(){
   const name = byId("name").value.trim();
   const goal = byId("goal").value.trim();
-  if(!name){ alert("Type a nickname first."); return; }
+
+  if(!name){
+    alert("Type a nickname first.");
+    focusEl("name");
+    return;
+  }
 
   const picked = [];
   document.querySelectorAll("input[type=checkbox][data-sub]").forEach(cb=>{
@@ -150,7 +152,11 @@ function start(){
       ensureSupport(subject);
     }
   });
-  if(!picked.length){ alert("Pick at least one subject."); return; }
+
+  if(!picked.length){
+    alert("Pick at least one subject.");
+    return;
+  }
 
   state.profile = { name, goal, picked };
   saveState();
@@ -191,7 +197,7 @@ function renderTiles(){
     const sup = supportLabel(subject);
 
     const tile = document.createElement("div");
-    tile.className="tile";
+    tile.className = "tile";
     tile.innerHTML = `
       <div class="tileTop">
         <div>
@@ -205,7 +211,7 @@ function renderTiles(){
       </div>
       <div class="bar"><div class="fill" style="width:${fill}%"></div></div>
     `;
-   tile.addEventListener("click", ()=>openSubjectHub(subject));
+    tile.addEventListener("click", ()=>openSubjectHub(subject));
     tiles.appendChild(tile);
   });
 }
@@ -259,21 +265,20 @@ function openModal(subject, level){
   byId("drillList").innerHTML = `<li class="muted">Drills appear after AI coaching.</li>`;
 
   byId("modal").classList.remove("hidden");
+  focusEl("mOverall");
 }
 
 function refreshUnlockUI(subject){
   const sel = byId("drillDiff");
   const sup = state.support[subject];
 
-  // Enable/disable Hard + Secret based on unlocks
   const hardOpt = [...sel.options].find(o=>o.value==="hard");
   const secOpt  = [...sel.options].find(o=>o.value==="secret");
   if(hardOpt) hardOpt.disabled = !sup.hardUnlocked;
   if(secOpt)  secOpt.disabled  = !sup.secretUnlocked;
 
-  // If currently selected is locked, revert to auto
-  if(sel.value==="hard" && !sup.hardUnlocked) sel.value="auto";
-  if(sel.value==="secret" && !sup.secretUnlocked) sel.value="auto";
+  if(sel.value==="hard" && !sup.hardUnlocked) sel.value = "auto";
+  if(sel.value==="secret" && !sup.secretUnlocked) sel.value = "auto";
 }
 
 function closeModal(){
@@ -288,7 +293,7 @@ function renderSections(subject){
 
   tpl.sections.forEach(sec=>{
     const div = document.createElement("div");
-    div.className="sectionItem";
+    div.className = "sectionItem";
     div.innerHTML = `
       <div class="sectionHead">
         <div>
@@ -346,6 +351,7 @@ function collectSections(){
 
 function addResult(){
   if(!currentKey) return;
+
   const type = byId("mType").value;
   const date = byId("mDate").value || new Date().toISOString().slice(0,10);
   const overall = num(byId("mOverall").value);
@@ -359,8 +365,10 @@ function addResult(){
   }
 
   const sections = collectSections();
+
   state.results[currentKey] = state.results[currentKey] || [];
   state.results[currentKey].push({ type, date, score, sections });
+  state.results[currentKey].sort((a,b)=> String(a.date||"").localeCompare(String(b.date||"")));
 
   saveState();
   renderTiles();
@@ -475,436 +483,353 @@ function renderHistory(subject){
     byId("historyLine").textContent = "No results yet.";
     return;
   }
-  const last = arr[arr.length-1];
-  byId("historyLine").textContent = `Latest: ${last.type} (${last.date}) — ${last.score}%`;
+
+  const first = arr[0].score;
+  const last = arr[arr.length-1].score;
+  const delta = last - first;
+  const trend = delta > 0 ? `up ${delta}` : delta < 0 ? `down ${Math.abs(delta)}` : "flat";
+  byId("historyLine").textContent = `${arr.length} results • ${arr[0].date} → ${arr[arr.length-1].date} • Trend: ${trend}`;
 }
 
-function band(score){
-  if(score >= 90) return "H1";
-  if(score >= 80) return "H2";
-  if(score >= 70) return "H3";
-  if(score >= 60) return "H4";
-  if(score >= 50) return "H5";
-  if(score >= 40) return "H6";
-  return "H7/8";
+function band(p){
+  if(p >= 90) return "H1 / O1";
+  if(p >= 80) return "H2 / O1";
+  if(p >= 70) return "H3 / O2";
+  if(p >= 60) return "H4 / O3";
+  if(p >= 50) return "H5 / O4";
+  if(p >= 40) return "H6 / O5";
+  if(p >= 30) return "H7 / O6";
+  return "Needs lift";
 }
 
-// -------------------- DRILL ENGINE --------------------
-let drill = null;
+// ======= DRILLS / TURBITO =======
 
 function openDrill(){
   if(!currentKey) return;
-  ensureSupport(currentKey);
-
-  const mode = byId("drillMode").value;
-  const diffSel = byId("drillDiff").value;
-
-  const bank = window.DRILL_BANK?.[currentKey];
-  if(!bank){ alert("No drill bank found for this subject yet."); return; }
-
-  const set = pickSet(bank, mode);
-  if(!set.length){ alert("No prompts for this mode yet."); return; }
-
-  // Determine effective difficulty:
-  // - If user chose auto, we use support mode as the "difficulty"
-  // - Otherwise, respect selection IF unlocked
-  const sup = state.support[currentKey];
-  const eff = resolveDifficulty(diffSel, sup);
-
-  byId("supportLabel").textContent = supportLabel(currentKey);
-  refreshUnlockUI(currentKey);
 
   byId("modal").classList.add("hidden");
   byId("drillScreen").classList.remove("hidden");
+  byId("subjectHub").classList.add("hidden");
+  focusEl("dAnswer");
 
-  const total = (mode === "structured5") ? 5 : 10;
+  const subject = currentKey;
+  byId("drillSubject").textContent = subject;
+  byId("drillSupport").textContent = supportLabel(subject);
 
-  drill = {
-    subject: currentKey,
-    mode,
-    diff: eff,             // build|strength|exam|hard|secret
-    prompts: shuffle([...set]),
-    i: 0,
-    score: 0,
-    total,
-    startedAt: null,
-    timerInt: null,
-    current: null
-  };
-
-  byId("dTitle").textContent = `${currentKey} • ${labelMode(mode)} • ${displayDiff(eff)}`;
-  byId("dTotal").textContent = String(total);
-  byId("dScore").textContent = "0";
-  byId("dPrompt").textContent = "Press Start";
-  byId("dAnswer").value = "";
-  byId("dTimer").textContent = "00:00";
-  byId("scaffold").classList.add("hidden");
-  byId("clozeBank").classList.add("hidden");
-
-  byId("dHelp").textContent =
-    mode === "rapid10" ? "Rapid-10: quick recall. 10 prompts."
-    : mode === "structured5" ? "Structured-5: show method/steps. 5 prompts."
-    : "Cloze: fill blanks. Use ' | ' between blanks.";
-
-  const bestKey = bestKeyFor(currentKey, mode, eff);
-  const best = state.best?.[bestKey] || null;
-  byId("dBest").textContent = best ? `${best.score}/${total} in ${best.time}` : "—";
-}
-
-function resolveDifficulty(sel, sup){
-  if(sel === "auto"){
-    // Map support mode to how much scaffold help they get
-    return sup.mode; // build|strength|exam
-  }
-  if(sel === "hard" && sup.hardUnlocked) return "hard";
-  if(sel === "secret" && sup.secretUnlocked) return "secret";
-  if(sel === "easy") return "build";
-  if(sel === "mid") return "strength";
-  if(sel === "hard") return sup.mode;   // locked -> fallback
-  if(sel === "secret") return sup.mode; // locked -> fallback
-  return "strength";
-}
-
-function displayDiff(d){
-  if(d==="build") return "Build";
-  if(d==="strength") return "Strength";
-  if(d==="exam") return "Exam";
-  if(d==="hard") return "Hard";
-  return "Secret";
-}
-
-function labelMode(m){
-  if(m==="rapid10") return "Rapid-10";
-  if(m==="structured5") return "Structured-5";
-  return "Cloze";
-}
-
-function pickSet(bank, mode){
-  if(mode==="rapid10") return bank.rapid || [];
-  if(mode==="structured5") return bank.structured || [];
-  return bank.cloze || [];
+  resetRoundUI();
 }
 
 function exitDrill(){
-  stopTimer();
   byId("drillScreen").classList.add("hidden");
-  byId("modal").classList.remove("hidden");
-  // refresh label in modal
-  if(currentKey) byId("supportLabel").textContent = supportLabel(currentKey);
+  byId("subjectHub").classList.remove("hidden");
+  resetRoundState();
+}
+
+let roundState = {
+  active:false,
+  items:[],
+  i:0,
+  score:0,
+  max:0,
+  wrongs:[],
+  startedAt:0,
+  timerId:null
+};
+
+function resetRoundState(){
+  if(roundState.timerId) clearInterval(roundState.timerId);
+  roundState = { active:false, items:[], i:0, score:0, max:0, wrongs:[], startedAt:0, timerId:null };
+}
+
+function resetRoundUI(){
+  byId("dPrompt").textContent = "Press Start round";
+  byId("dAnswer").value = "";
+  byId("dFeedback").textContent = "";
+  byId("dProgress").textContent = "0/0";
+  byId("dScore").textContent = "0";
+  byId("dTimer").textContent = "00:00";
+}
+
+function selectDrillDifficulty(subject){
+  const pick = byId("drillDiff").value;
+  if(pick !== "auto") return pick;
+
+  ensureSupport(subject);
+  const sup = state.support[subject];
+  const avg = sup.structuredScores.length ? Math.round(avgOf(sup.structuredScores.slice(-5))) : 0;
+
+  if(avg >= 85 && sup.secretUnlocked) return "secret";
+  if(avg >= 70 && sup.hardUnlocked) return "hard";
+  return "base";
+}
+
+function buildDrillItems(subject, diff){
+  const bank = (window.DRILLS && window.DRILLS[subject]) || [];
+  let items = [];
+
+  if(Array.isArray(bank) && bank.length){
+    items = bank
+      .filter(x => !diff || x.diff === diff || (diff==="base" && !x.diff))
+      .slice();
+  }
+
+  if(!items.length && Array.isArray(bank) && bank.length){
+    items = bank.slice();
+  }
+
+  if(!items.length){
+    items = [
+      {q:`${subject}: define 3 key terms`, a:["sample"], diff:"base"},
+      {q:`${subject}: one short answer practice`, a:["sample"], diff:"base"},
+      {q:`${subject}: one exam tip`, a:["sample"], diff:"base"}
+    ];
+  }
+
+  return shuffle(items).slice(0, 10);
 }
 
 function startRound(){
-  if(!drill) return;
-  drill.i = 0;
-  drill.score = 0;
-  drill.startedAt = Date.now();
+  if(!currentKey) return;
+
+  const subject = currentKey;
+  ensureSupport(subject);
+
+  const diff = selectDrillDifficulty(subject);
+  const items = buildDrillItems(subject, diff);
+
+  resetRoundState();
+  roundState.active = true;
+  roundState.items = items;
+  roundState.i = 0;
+  roundState.score = 0;
+  roundState.max = items.length;
+  roundState.wrongs = [];
+  roundState.startedAt = Date.now();
+
+  byId("dDifficulty").textContent = diff.toUpperCase();
+  byId("dProgress").textContent = `1/${roundState.max}`;
   byId("dScore").textContent = "0";
-  nextPrompt();
-  startTimer();
-  byId("dAnswer").focus();
-}
-
-function nextPrompt(){
-  const p = drill.prompts[drill.i % drill.prompts.length];
-  drill.current = p;
-
-  byId("scaffold").classList.add("hidden");
-  byId("clozeBank").classList.add("hidden");
-
-  if(p.text && p.blanks){
-    byId("dPrompt").textContent = renderCloze(p, drill.diff);
-    const showBank = (drill.diff==="build" || drill.diff==="strength") && Array.isArray(p.bank) && p.bank.length;
-    if(showBank){
-      byId("clozeBank").innerHTML = `<strong>Word bank:</strong> ${p.bank.join(" • ")}`;
-      byId("clozeBank").classList.remove("hidden");
-    }
-  } else {
-    byId("dPrompt").textContent = p.q;
-  }
   byId("dAnswer").value = "";
+  byId("dFeedback").textContent = "";
+
+  showCurrentPrompt();
+  focusEl("dAnswer");
+  startTimer();
 }
 
-function renderCloze(p, diff){
-  // more difficulty => less help: we increase blanks visually by hiding more words (simple version)
-  // Here we just replace ___ with blanks; Secret/Hard means no bank + more pressure
-  const blanks = p.blanks.map(()=> "_____").join(" ");
-  return p.text.replace(/___+/g, blanks);
+function showCurrentPrompt(){
+  const item = roundState.items[roundState.i];
+  byId("dPrompt").textContent = item ? item.q : "Done";
 }
 
 function submitAnswer(){
-  if(!drill || !drill.startedAt) return;
+  if(!roundState.active) return;
 
-  const p = drill.current;
-  const raw = byId("dAnswer").value;
+  const item = roundState.items[roundState.i];
+  if(!item) return;
 
-  const ok = checkAnswer(drill.mode, p, raw);
+  const raw = byId("dAnswer").value.trim();
+  if(!raw) return;
 
+  const ok = isCorrect(raw, item.a || []);
   if(ok){
-    drill.score++;
-    byId("dScore").textContent = String(drill.score);
-  } else {
-    const scaffold = scaffoldFor(drill.subject, drill.mode, p, drill.diff);
-    if(scaffold){
-      byId("scaffold").innerHTML = scaffold;
-      byId("scaffold").classList.remove("hidden");
-    }
+    roundState.score++;
+    byId("dFeedback").textContent = "✅ Correct";
+  }else{
+    byId("dFeedback").textContent = "❌ Not quite";
+    roundState.wrongs.push({q:item.q, a:item.a, got:raw});
   }
 
-  drill.i++;
-  if(drill.i >= drill.total){
-    finishDrill();
-  } else {
-    nextPrompt();
+  byId("dScore").textContent = String(roundState.score);
+
+  roundState.i++;
+  if(roundState.i >= roundState.max){
+    finishRound();
+    return;
   }
+
+  byId("dProgress").textContent = `${roundState.i+1}/${roundState.max}`;
+  byId("dAnswer").value = "";
+  showCurrentPrompt();
+  focusEl("dAnswer");
 }
 
-function checkAnswer(mode, p, raw){
-  const ans = norm(raw);
-
-  if(p.text && p.blanks){
-    const parts = raw.split("|").map(x=>norm(x)).filter(Boolean);
-    if(parts.length !== p.blanks.length) return false;
-    for(let i=0;i<p.blanks.length;i++){
-      if(norm(p.blanks[i]) !== parts[i]) return false;
-    }
-    return true;
-  }
-
-  const acceptable = (p.a||[]).map(norm);
-  if(acceptable.includes("*")) return ans.length > 0;
-  if(acceptable.some(x=>x===ans)) return true;
-
-  // Structured: allow “good structure keywords” to count (so they practise the frame)
-  if(mode==="structured5"){
-    const hits = ["formula","sub","substitute","unit","because","however","overall","point","evidence","explain","example","define"];
-    if(hits.some(t => ans.includes(t))) return true;
-  }
-
-  return false;
+function isCorrect(raw, answers){
+  const n = norm(raw);
+  return answers.some(a => norm(a) === n);
 }
 
-function scaffoldFor(subject, mode, p, diff){
-  if(mode !== "structured5") return "";
+function finishRound(){
+  roundState.active = false;
+  if(roundState.timerId) clearInterval(roundState.timerId);
 
-  // Use scaffold if prompt supplies it
-  if(p.scaffold){
-    const tier = (diff==="hard" || diff==="secret") ? "exam" : diff; // hard/secret => minimal scaffold
-    const lines = p.scaffold[tier] || p.scaffold.exam || [];
-    if(lines.length){
-      return `<strong>Support:</strong><br>` + lines.map(l=>`• ${esc(l)}`).join("<br>");
-    }
-  }
+  const elapsed = Date.now() - roundState.startedAt;
+  const pct = roundState.max ? Math.round((roundState.score / roundState.max) * 100) : 0;
 
-  // Fallback generic scaffold for structured tasks
-  const tier = (diff==="hard" || diff==="secret") ? "exam" : diff;
-  if(tier==="build"){
-    return `<strong>Support:</strong><br>• Define / State<br>• Explain (how/why)<br>• Example (specific)<br>• Link to question`;
-  }
-  if(tier==="strength"){
-    return `<strong>Support:</strong><br>• Define + explain + example`;
-  }
-  return `<strong>Support:</strong><br>• Answer to the marks`;
+  byId("dPrompt").textContent = `Round complete • ${pct}%`;
+  byId("dFeedback").innerHTML = `
+    <div><strong>Score:</strong> ${roundState.score}/${roundState.max} (${pct}%)</div>
+    <div><strong>Time:</strong> ${fmtTime(elapsed)}</div>
+    ${roundState.wrongs.length ? `<div class="mt muted">Review: ${roundState.wrongs.length} missed</div>` : `<div class="mt">Perfect round 👏</div>`}
+  `;
+
+  recordDrillPerformance(currentKey, pct);
+  refreshUnlockUI(currentKey);
+  byId("drillSupport").textContent = supportLabel(currentKey);
 }
 
-function finishDrill(){
-  stopTimer();
-  const elapsedMs = Date.now() - drill.startedAt;
-  const time = fmtTime(elapsedMs);
-
-  const key = bestKeyFor(drill.subject, drill.mode, drill.diff);
-  state.best = state.best || {};
-  const prev = state.best[key];
-
-  const isPB = (!prev)
-    || (drill.score > prev.score)
-    || (drill.score === prev.score && msFromFmt(time) < msFromFmt(prev.time));
-
-  if(isPB){
-    state.best[key] = { score: drill.score, time };
-    confettiBoom();
-    playFanfare();
-  }
-
-  // Update adaptive support only using structured mode (this is the learning backbone)
-  if(drill.mode === "structured5"){
-    updateSupportAfterStructured(drill.subject, drill.score, drill.total);
-    byId("supportLabel").textContent = supportLabel(drill.subject);
-  }
-
-  saveState();
-  renderTiles();
-
-  byId("dPrompt").textContent = isPB
-    ? `PB! ${drill.score}/${drill.total} in ${time}`
-    : `Done: ${drill.score}/${drill.total} in ${time}`;
-
-  const bestNow = state.best[key];
-  byId("dBest").textContent = bestNow ? `${bestNow.score}/${drill.total} in ${bestNow.time}` : "—";
-}
-
-function updateSupportAfterStructured(subject, score, total){
+function recordDrillPerformance(subject, pct){
   ensureSupport(subject);
   const sup = state.support[subject];
 
-  const pct = Math.round((score/total)*100);
   sup.structuredScores.push(pct);
-  // keep last 6
-  if(sup.structuredScores.length > 6) sup.structuredScores.shift();
+  if(sup.structuredScores.length > 12) sup.structuredScores = sup.structuredScores.slice(-12);
 
-  // "shown improvement" rules:
-  // Promote if:
-  // - last 2 >= 80
-  // OR last 3 avg >= 75
-  // OR last 4 avg >= 70
-  const last2 = sup.structuredScores.slice(-2);
-  const last3 = sup.structuredScores.slice(-3);
-  const last4 = sup.structuredScores.slice(-4);
+  const last5 = sup.structuredScores.slice(-5);
+  const avg5 = last5.length ? Math.round(avgOf(last5)) : 0;
 
-  const good2 = last2.length===2 && last2.every(x=>x>=80);
-  const avg3 = last3.length===3 ? Math.round(avgOf(last3)) : 0;
-  const avg4 = last4.length===4 ? Math.round(avgOf(last4)) : 0;
+  if(avg5 >= 65) sup.hardUnlocked = true;
+  if(avg5 >= 85 && last5.length >= 3) sup.secretUnlocked = true;
 
-  // demote if wobble:
-  // - last 2 avg < 55
-  const wobble = last2.length===2 && Math.round(avgOf(last2)) < 55;
-
-  if(wobble){
-    // protect them: add support back
+  if(avg5 >= 80){
+    sup.mode = "exam";
+  }else if(avg5 >= 55){
+    sup.mode = "strength";
+  }else{
     sup.mode = "build";
-  } else {
-    if(sup.mode === "build"){
-      if(good2 || avg3>=75 || avg4>=70) sup.mode = "strength";
-    } else if(sup.mode === "strength"){
-      if(good2 || avg3>=82) sup.mode = "exam";
-    } else if(sup.mode === "exam"){
-      // stay in exam unless sustained wobble triggers build above
-    }
   }
 
-  // Unlocks:
-  // Hard unlock if last 3 structured >= 85 avg OR 3 consecutive >= 85
-  if(!sup.hardUnlocked && last3.length===3){
-    if(Math.round(avgOf(last3)) >= 85) sup.hardUnlocked = true;
-  }
-
-  // Secret unlock if last 4 avg >= 90 AND at least one perfect (100) in last 6
-  if(!sup.secretUnlocked && sup.structuredScores.length >= 4){
-    const avgLast4 = Math.round(avgOf(last4.length?last4:sup.structuredScores.slice(-4)));
-    const hasPerfect = sup.structuredScores.includes(100);
-    if(avgLast4 >= 90 && hasPerfect) sup.secretUnlocked = true;
-  }
+  saveState();
 }
 
 function startTimer(){
-  stopTimer();
-  drill.timerInt = setInterval(()=>{
-    const ms = Date.now() - drill.startedAt;
+  if(roundState.timerId) clearInterval(roundState.timerId);
+  roundState.timerId = setInterval(()=>{
+    if(!roundState.active) return;
+    const ms = Date.now() - roundState.startedAt;
     byId("dTimer").textContent = fmtTime(ms);
   }, 250);
 }
-function stopTimer(){
-  if(drill?.timerInt) clearInterval(drill.timerInt);
-  if(drill) drill.timerInt = null;
-}
 
-function confettiBoom(){
-  const c = byId("confetti");
-  const ctx = c.getContext("2d");
-  const dpr = window.devicePixelRatio || 1;
-  const w = c.clientWidth || 900;
-  const h = c.clientHeight || 600;
-  c.width = w*dpr; c.height = h*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+// ======= STORAGE =======
 
-  const pieces = Array.from({length:140}, ()=>({
-    x: Math.random()*w,
-    y: -20 - Math.random()*h*0.2,
-    vx: (Math.random()-0.5)*3,
-    vy: 2 + Math.random()*4,
-    r: 2 + Math.random()*4,
-    a: 1
-  }));
-
-  let t = 0;
-  const anim = () => {
-    t++;
-    ctx.clearRect(0,0,w,h);
-    pieces.forEach(p=>{
-      p.x += p.vx; p.y += p.vy; p.vy += 0.03;
-      p.a -= 0.008;
-      ctx.globalAlpha = Math.max(p.a,0);
-      ctx.fillStyle = (Math.random()<0.33) ? "#1f7a4c" : (Math.random()<0.5 ? "#0b2545" : "#f2b01e");
-      ctx.beginPath();
-      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-      ctx.fill();
-    });
-    ctx.globalAlpha = 1;
-    if(t < 150) requestAnimationFrame(anim);
-    else ctx.clearRect(0,0,w,h);
-  };
-  requestAnimationFrame(anim);
-}
-
-function playFanfare(){
-  const a = byId("fanfare");
-  if(!a) return;
-  a.currentTime = 0;
-  a.play().catch(()=>{});
-}
-
-// -------------------- storage + helpers --------------------
 function loadState(){
-  const raw = localStorage.getItem(LS_KEY);
-  if(raw){
-    try { return JSON.parse(raw); } catch {}
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw){
+      return {
+        profile: { name:"", goal:"", picked:[] },
+        results: {},
+        support: {}
+      };
+    }
+    const parsed = JSON.parse(raw);
+
+    parsed.profile = parsed.profile || { name:"", goal:"", picked:[] };
+    parsed.results = parsed.results || {};
+    parsed.support = parsed.support || {};
+
+    return parsed;
+  }catch{
+    return {
+      profile: { name:"", goal:"", picked:[] },
+      results: {},
+      support: {}
+    };
   }
-  return { profile:null, results:{}, best:{}, support:{} };
 }
-function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+function saveState(){
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+}
+
 function resetLocal(){
-  if(!confirm("Reset all local data on this device?")) return;
+  if(!confirm("Reset all local coach data on this device?")) return;
   localStorage.removeItem(LS_KEY);
   location.reload();
+}
+
+// ======= HELPERS =======
+
+function focusEl(id){
+  const el = byId(id);
+  if(!el) return;
+  setTimeout(()=>{
+    try{
+      el.focus();
+      if(el.setSelectionRange && el.value != null){
+        const n = String(el.value).length;
+        el.setSelectionRange(n,n);
+      }
+    }catch{}
+  }, 0);
 }
 
 function byId(id){ return document.getElementById(id); }
 function avgOf(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
 function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+
 function num(v){
   const n = Number(String(v).trim());
   return Number.isFinite(n) ? n : null;
 }
+
 function esc(s){
   return String(s)
     .replaceAll("&","&amp;").replaceAll("<","&lt;")
     .replaceAll(">","&gt;").replaceAll('"',"&quot;")
     .replaceAll("'","&#039;");
 }
+
 function cssEsc(s){ return String(s).replaceAll('"','\\"'); }
-function norm(s){ return (window.__NORM ? window.__NORM(s) : String(s||"").trim().toLowerCase()); }
+
+function norm(s){
+  return (window.__NORM ? window.__NORM(s) : String(s||"").trim().toLowerCase());
+}
 
 function fmtTime(ms){
   const total = Math.floor(ms/1000);
   const m = Math.floor(total/60);
-  const s = total%60;
+  const s = total % 60;
   return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
 }
+
 function msFromFmt(t){
-  const [m,s]=String(t).split(":").map(Number);
+  const [m,s] = String(t).split(":").map(Number);
   return (m*60+s)*1000;
 }
+
 function bestKeyFor(subject, mode, diff){
   return `best_${subject}_${mode}_${diff}`;
 }
+
 function shuffle(arr){
   for(let i=arr.length-1;i>0;i--){
     const j = Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]]=[arr[j],arr[i]];
+    [arr[i],arr[j]] = [arr[j],arr[i]];
   }
   return arr;
 }
 
-
+// expose for inline hooks / compatibility
+window.state = state;
 window.openModal = openModal;
 
-window.start = start;
+// Turbito compatibility aliases (keeps your turbito.js)
+(function ensureTurbitoAliases(){
+  const wireAliases = ()=>{
+    if(typeof window.startTurbito === "function"){
+      window.Turbito = window.startTurbito;
+      window.turbito = window.startTurbito;
+      return true;
+    }
+    return false;
+  };
+  if(!wireAliases()){
+    let tries = 0;
+    const t = setInterval(()=>{
+      tries++;
+      if(wireAliases() || tries > 40) clearInterval(t);
+    }, 250);
+  }
+})();
