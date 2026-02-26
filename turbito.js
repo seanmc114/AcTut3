@@ -1,9 +1,3 @@
-/* turbito.js — Turbito sidegame (5Q)
-   - 10 levels, lock/unlock
-   - 5 questions per run
-   - uses DRILL_BANK[subject].rapid filtered by level (H/O)
-*/
-
 (function(){
 
 const STORAGE_KEY = "TURBITO_V2";
@@ -18,7 +12,6 @@ function ensureSubject(subject){
     data[subject] = { unlocked: 1, best: {} };
     save(data);
   }
-  return data;
 }
 
 const DEFAULT_THRESHOLDS = [220,205,195,185,175,165,155,145,135,125];
@@ -35,7 +28,7 @@ function thresholdsFor(subject){
 function shuffle(arr){
   for(let i=arr.length-1;i>0;i--){
     const j = Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]] = [arr[j],arr[i]];
+    [arr[i],arr[j]]=[arr[j],arr[i]];
   }
   return arr;
 }
@@ -54,46 +47,52 @@ function isCorrect(raw, answers){
   });
 }
 
-function getLevelForSubject(subject){
-  // read from coach profile if present
+// read level from coach state
+function getLevel(subject){
   try{
-    const coach = JSON.parse(localStorage.getItem("SYNGE_LC_COACH_MAIN_V6") || "null")
-      || JSON.parse(localStorage.getItem("SYNGE_LC_COACH_V5A") || "null")
-      || JSON.parse(localStorage.getItem("SYNGE_LC_COACH_V5") || "null");
-    const picked = coach?.profile?.picked || [];
-    return (picked.find(x=>x.subject===subject)?.level) || "H";
-  }catch{
-    return "H";
-  }
+    const keys = [
+      "SYNGE_LC_COACH_ENGINE_V1",
+      "SYNGE_LC_COACH_MAIN_V6",
+      "SYNGE_LC_COACH_V5A",
+      "SYNGE_LC_COACH_V5"
+    ];
+    for(const k of keys){
+      const s = JSON.parse(localStorage.getItem(k) || "null");
+      const picked = s?.profile?.picked || [];
+      const lv = picked.find(x=>x.subject===subject)?.level;
+      if(lv) return lv;
+    }
+  }catch{}
+  return "H";
 }
 
-function pickQuestions(subject, n=RUN_Q){
-  const level = getLevelForSubject(subject);
+function pickQuestions(subject){
+  const level = getLevel(subject);
   const bank = window.DRILL_BANK?.[subject];
   let pool = [];
 
   if(bank){
     if(Array.isArray(bank.rapid) && bank.rapid.length){
-      pool = bank.rapid.filter(x => !x.level || x.level === level);
+      pool = bank.rapid.filter(x=>!x.level || x.level===level).map(x=>({q:x.q, a:x.a||["*"]}));
     } else if(Array.isArray(bank.structured) && bank.structured.length){
-      pool = bank.structured.filter(x => !x.level || x.level === level).map(x => ({ q:x.q, a:["*"] }));
+      pool = bank.structured.filter(x=>!x.level || x.level===level).map(x=>({q:x.q, a:["*"]}));
     } else if(Array.isArray(bank.cloze) && bank.cloze.length){
-      pool = bank.cloze.filter(x => !x.level || x.level === level).map(x => ({ q:x.text, a: (x.blanks && x.blanks.length) ? x.blanks : ["*"] }));
+      pool = bank.cloze.filter(x=>!x.level || x.level===level).map(x=>({q:x.text, a:(x.blanks&&x.blanks.length)?x.blanks:["*"]}));
     }
   }
 
   if(!pool.length){
     pool = [
-      { q:`${subject}: one key definition`, a:["*"] },
-      { q:`${subject}: one core formula/fact`, a:["*"] },
+      { q:`${subject}: key definition`, a:["*"] },
+      { q:`${subject}: core fact/formula`, a:["*"] },
       { q:`${subject}: list 3 key terms`, a:["*"] },
-      { q:`${subject}: one exam phrase that earns marks`, a:["*"] },
-      { q:`${subject}: one mistake to avoid`, a:["*"] }
+      { q:`${subject}: marking scheme phrase`, a:["*"] },
+      { q:`${subject}: common mistake to avoid`, a:["*"] }
     ];
   }
 
   shuffle(pool);
-  return pool.slice(0,n);
+  return pool.slice(0, RUN_Q);
 }
 
 let active = null;
@@ -149,7 +148,7 @@ window.startTurbito = function(subject){
   function startLevel(subject, level, target){
     active = {
       subject, level, target,
-      qs: pickQuestions(subject, RUN_Q),
+      qs: pickQuestions(subject),
       i: 0,
       errors: 0,
       startedAt: Date.now()
