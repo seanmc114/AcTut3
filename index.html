@@ -1,211 +1,175 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LC Performance Coach</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="bg"></div>
-  <div class="crest"></div>
 
-  <div class="app">
-    <header>
-      <h1>LC Performance Coach</h1>
-      <p class="tag">Train smart. Perform better.</p>
+  <main class="wrap">
+    <header class="top">
+      <div class="brand">
+        <div class="title">LC Performance Coach</div>
+        <div class="subtitle">Train smart. Perform better.</div>
+      </div>
     </header>
 
+    <!-- SETUP -->
     <section id="setup" class="card">
-      <h2>Start</h2>
-      <input id="name" placeholder="Enter a nickname" />
-      <input id="goal" placeholder="Goal (optional, e.g. H3 in Spanish)" />
-
-      <div class="pickerWrap">
-        <h3>Choose subjects</h3>
-        <div id="subjectPicker"></div>
+      <div class="row">
+        <button id="btnStart" class="primary">Start</button>
       </div>
 
-      <button id="btnStart" type="button" class="primary">Enter</button>
+      <label class="field">
+        <span>Enter a nickname</span>
+        <input id="name" type="text" autocomplete="nickname" />
+      </label>
+
+      <label class="field">
+        <span>Goal (optional, e.g. H3 in Spanish)</span>
+        <input id="goal" type="text" />
+      </label>
+
+      <div class="divider"></div>
+
+      <div class="h3">Choose subjects</div>
+      <div class="muted">Tick only what you do. Pick Higher/Ordinary.</div>
+      <div id="subjectPicker" class="picker"></div>
+
+      <div class="row">
+        <button id="btnSaveSubjects" class="primary">Enter</button>
+      </div>
     </section>
 
-    <section id="who" class="card hidden">
-      <div><strong>Player:</strong> <span id="whoName">—</span></div>
-    </section>
-
+    <!-- DASHBOARD -->
     <section id="dash" class="hidden">
-      <div class="stats">
-        <div class="stat"><span>Overall</span><div id="overallAvg">—</div></div>
-        <div class="stat"><span>Band</span><div id="overallBand">—</div></div>
-        <div class="stat"><span>Marks Recovered</span><div id="marksRecovered">0</div></div>
-      </div>
-
       <div class="card">
-        <h3>Add result date</h3>
-        <input type="date" id="mDate" />
-        <div class="rowBtns">
-          <button id="btnAdd" class="primary">Add Result</button>
-          <button id="btnCoach" class="primary">Coach Me</button>
-          <button id="btnReset">Reset</button>
+        <div class="who">Player: <strong id="whoName">—</strong></div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="statLabel">Overall</div>
+            <div class="statValue" id="overallAvg">—</div>
+          </div>
+          <div class="stat">
+            <div class="statLabel">Band</div>
+            <div class="statValue" id="overallBand">—</div>
+          </div>
+          <div class="stat">
+            <div class="statLabel">Marks Recovered</div>
+            <div class="statValue" id="marksRecovered">0</div>
+          </div>
         </div>
-        <p class="muted">Tap a subject tile to open subject hub / Turbito / drills.</p>
+
+        <div class="divider"></div>
+
+        <div class="grid2">
+          <label class="field">
+            <span>Add result date</span>
+            <input id="mDate" type="date" />
+          </label>
+
+          <label class="field">
+            <span>Subject</span>
+            <select id="mSubject"></select>
+          </label>
+
+          <label class="field">
+            <span>Score % (0–100)</span>
+            <input id="mScore" type="number" min="0" max="100" />
+          </label>
+
+          <div class="row end">
+            <button id="btnAdd" class="primary">Add Result</button>
+            <button id="btnCoach" class="ghost">The Brother</button>
+            <button id="btnReset" class="ghost">Reset</button>
+          </div>
+        </div>
+
+        <div id="coachBox" class="coachBox"></div>
       </div>
 
+      <div class="muted tip">Tap a subject tile to open the hub (Coach + graphs + Turbito).</div>
       <div id="tiles" class="tiles"></div>
     </section>
 
-    <section id="subjectHub" class="hidden card">
-      <h2 id="subjectTitle">Subject</h2>
-      <div class="rowBtns">
-        <button id="btnBackToDash">Back</button>
-        <button id="btnOpenCoach" class="primary">Performance Coach</button>
-        <button id="btnTurbito" class="primary">Turbito</button>
+    <!-- SUBJECT HUB -->
+    <section id="subjectHub" class="hidden">
+      <div class="card">
+        <div class="hubTop">
+          <button id="btnBackToDash" class="ghost">Back</button>
+          <div class="hubTitle" id="subjectTitle">Subject</div>
+          <div class="hubBtns">
+            <button id="btnBrother" class="primary">The Brother</button>
+            <button id="btnTurbito" class="ghost">Turbito</button>
+          </div>
+        </div>
+
+        <div id="hubNote" class="hubNote"></div>
+
+        <!-- Scrollable graphs -->
+        <div class="scroller">
+          <div class="scrollerInner">
+            <div class="chartCard">
+              <div class="h3">Results Trend</div>
+              <canvas id="resultsChart" height="140"></canvas>
+            </div>
+            <div class="chartCard">
+              <div class="h3">Most Expensive Leaks</div>
+              <div class="muted">From drills + weighted essentials.</div>
+              <canvas id="leakChart" height="140"></canvas>
+            </div>
+            <div class="chartCard">
+              <div class="h3">Drill Streak</div>
+              <div class="muted">Intent earns The Brother.</div>
+              <canvas id="drillChart" height="140"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="h3">Turbito (sidegame)</div>
+        <div class="muted">Fast 5-question reps. Beat your best. Unlock levels.</div>
+
+        <div id="turbitoContainer"></div>
+        <div id="turbitoView"></div>
       </div>
-      <div id="turbitoContainer" class="turbitoGrid"></div>
-      <div id="turbitoView" class="cardLite" style="display:none;"></div>
     </section>
 
-    <div id="modal" class="hidden overlay">
-      <div class="card modalCard">
-        <div class="rowBetween">
-          <div>
-            <h3 id="mTitle">Subject</h3>
-            <div id="mMeta" class="muted"></div>
-          </div>
-          <button id="btnClose">Close</button>
+    <!-- DRILL MODAL -->
+    <div id="drillModal" class="modal hidden">
+      <div class="modalCard">
+        <div class="modalTop">
+          <div class="h3" id="dTitle">Brother Drill</div>
+          <button id="btnExitDrill" class="ghost">Close</button>
         </div>
 
-        <div class="grid2">
-          <div>
-            <label>Exam type</label>
-            <select id="mType">
-              <option>Class Test</option>
-              <option>Christmas</option>
-              <option>Mock</option>
-              <option>Summer</option>
-              <option>Pre</option>
-              <option>Practice</option>
-            </select>
-          </div>
-          <div>
-            <label>Date</label>
-            <input type="date" id="mDateProxy" disabled placeholder="Use dashboard date" />
-          </div>
-        </div>
+        <div id="dPrompt" class="prompt">Press start from The Brother.</div>
 
-        <label>Overall % (optional if using sections)</label>
-        <input id="mOverall" type="number" min="0" max="100" placeholder="Overall %" />
-        <div id="weightedPreview" class="muted"></div>
+        <label class="field">
+          <span>Your answer</span>
+          <input id="dAnswer" type="text" />
+        </label>
 
-        <div id="sectionBox" class="sectionBox"></div>
+        <div id="dFeedback" class="muted"></div>
 
-        <div class="rowBtns">
-          <button id="btnAddFromModal" class="primary">Add Result</button>
-          <button id="btnCoachFromModal" class="primary">Coach me (AI)</button>
-        </div>
-
-        <div class="cardLite">
-          <div class="rowBetween"><strong>Adaptive support</strong> <span id="supportLabel">Build Mode</span></div>
-          <div class="drillControls">
-            <select id="drillMode">
-              <option value="rapid10">Rapid-10</option>
-              <option value="structured5">Structured-5</option>
-              <option value="cloze">Cloze</option>
-            </select>
-            <select id="drillDiff">
-              <option value="auto">Auto</option>
-              <option value="easy">Easy</option>
-              <option value="mid">Mid</option>
-              <option value="hard">Hard</option>
-              <option value="secret">Secret</option>
-            </select>
-            <button id="btnStartDrill" class="primary">Start Drill</button>
-          </div>
-        </div>
-
-        <div class="grid2">
-          <div class="cardLite">
-            <h4>Coach</h4>
-            <div id="coachBox" class="muted">Add at least two results for best targeting.</div>
-            <ul id="drillList" class="muted"><li>Drills appear after AI coaching.</li></ul>
-          </div>
-          <div class="cardLite">
-            <h4>Progress</h4>
-            <canvas id="chart" height="160"></canvas>
-            <div id="historyLine" class="muted">No results yet.</div>
-          </div>
+        <div class="row end">
+          <button id="btnSubmit" class="primary">Submit</button>
         </div>
       </div>
     </div>
 
-    <section id="drillScreen" class="hidden card">
-      <div class="rowBetween">
-        <h3 id="dTitle">Drill</h3>
-        <button id="btnExitDrill">Exit</button>
-      </div>
-      <div class="drillStats">
-        <div>Score <strong id="dScore">0</strong>/<span id="dTotal">0</span></div>
-        <div>Time <strong id="dTimer">00:00</strong></div>
-        <div>Best <strong id="dBest">—</strong></div>
-      </div>
-      <div id="dHelp" class="muted"></div>
-      <div id="dPrompt" class="prompt">Press Start</div>
-      <div id="clozeBank" class="hint hidden"></div>
-      <input id="dAnswer" placeholder="Your answer" />
-      <div id="scaffold" class="hint hidden"></div>
-      <div class="rowBtns">
-        <button id="btnStartRound" class="primary">Start</button>
-        <button id="btnSubmit" class="primary">Submit</button>
-      </div>
-    </section>
+    <footer class="foot muted">Synge Street Games Lab • The Brother • 2026</footer>
+  </main>
 
-    <canvas id="confetti" class="confetti"></canvas>
-    <audio id="fanfare" preload="auto"></audio>
-
-    <footer>© Synge Street CBS 2026 · Imagination and Perseverance</footer>
-  </div>
-
-  <script src="ai.js"></script>
   <script src="drills.js"></script>
+  <script src="ai.js"></script>
   <script src="script.js"></script>
   <script src="turbito.js"></script>
-  <script>
-    // Bridge buttons that exist in the modal to the existing handlers
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const bindClick = (from, to)=>{
-        const a = document.getElementById(from), b = document.getElementById(to);
-        if(a && b) a.addEventListener('click', ()=>b.click());
-      };
-      bindClick('btnAddFromModal','btnAdd');
-      bindClick('btnCoachFromModal','btnCoach');
-      const coachBtn = document.getElementById('btnOpenCoach');
-      if(coachBtn && window.openModal){
-        coachBtn.addEventListener('click', ()=>{
-          const subj = document.getElementById('subjectTitle')?.innerText;
-          const picked = (window.state?.profile?.picked||[]).find(p=>p.subject===subj);
-          if(picked) window.openModal(subj, picked.level);
-        });
-      }
-      const mDate = document.getElementById('mDate');
-      const proxy = document.getElementById('mDateProxy');
-      if(mDate && proxy){
-        const sync=()=>{ proxy.value = mDate.value; };
-        mDate.addEventListener('input', sync); sync();
-      }
-    });
-  </script>
-
-  <script>
-    window.addEventListener('load', ()=>{
-      const b = document.getElementById('btnStart');
-      if(b && !b.__fallbackBound){
-        b.__fallbackBound = true;
-        b.addEventListener('click', (e)=>{
-          if(window.start){ e.preventDefault(); window.start(); }
-        });
-      }
-    });
-  </script>
 </body>
 </html>
