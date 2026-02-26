@@ -57,6 +57,7 @@
 
   // UI wiring
   document.addEventListener("DOMContentLoaded", () => {
+document.getElementById("drillModal")?.classList.add("hidden");
     // build subject picker UI from DRILL_BANK keys
     buildSubjectPicker();
     bind("btnStart", start);
