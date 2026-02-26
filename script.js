@@ -1,38 +1,27 @@
-/* script.js — LC Coach + Turbito UX glue (uses DRILL_BANK rapid/structured/cloze)
-   - Fixes Coach button (always responsive: creates coachBox if missing)
-   - Subject selection by ticking subjects (kid-friendly)
-   - Turbito gets its own header + motivational tagline
-   - Turbito answer feedback: shows correct answer + (if structured item) scaffold hints
-   - Keeps existing look: no CSS changes
-*/
-
 (() => {
   "use strict";
 
-  const LS_KEY = "SYNGE_LC_COACH_V5";
+  const LS_KEY = "SYNGE_LC_COACH_ENGINE_V1";
 
-  // Earned AI coach (intent OR performance)
+  // AI earned
   const AI_MIN_RESULTS = 2;
   const AI_MIN_SCORE_FOR_AI = 70;
   const AI_MIN_DRILL_AVG_FOR_AI = 70;
-  const AI_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour per subject
+  const AI_COOLDOWN_MS = 60 * 60 * 1000;
 
-  const SUBJECT_CATALOGUE = [
-    "English","Maths","Spanish","French","German",
-    "Biology","Chemistry","Physics",
-    "Accounting","Economics","Business",
-    "History","Geography","Home Ec","Art","PE"
-  ];
+  // 5 reps for Brother drills
+  const DRILL_Q = 5;
 
   const state = loadState();
   let currentSubject = null;
-
-  // drill run (coach drill, not turbito)
   let drillRun = null;
+
+  let chartResults = null;
+  let chartLeaks = null;
+  let chartDrills = null;
 
   const $ = (id) => document.getElementById(id);
 
-  // ---------- helpers ----------
   function esc(s){
     return String(s)
       .replaceAll("&","&amp;")
@@ -41,12 +30,19 @@
       .replaceAll('"',"&quot;")
       .replaceAll("'","&#039;");
   }
-  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
-  function avg(arr){ return arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : null; }
   function focus(el){ if(el) setTimeout(()=>{ try{ el.focus(); }catch{} }, 0); }
+  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+  function avg(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null; }
   function toNum(x){
     const n = Number(String(x).replace("%","").trim());
     return Number.isFinite(n) ? n : null;
+  }
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
   }
   function band(p){
     if(p >= 90) return "H1 / O1";
@@ -58,228 +54,127 @@
     if(p >= 30) return "H7 / O6";
     return "Needs lift";
   }
-  function levelAccent(level){
-    return level === "O" ? "#2b6cff" : "#ff3fa6"; // Ordinary blue, Higher pink
-  }
-  function lastN(arr, n){ return arr.slice(Math.max(0, arr.length-n)); }
 
-  function picked(){ return state.profile.picked || []; }
-  function pickedSubjects(){ return picked().map(p=>p.subject); }
-  function pickedLevel(subject){
-    return (picked().find(x=>x.subject===subject)?.level) || "H";
-  }
-
-  // ---------- init ----------
+  // UI wiring
   document.addEventListener("DOMContentLoaded", () => {
-    // Focus nickname
-    focus($("name"));
+    // build subject picker UI from DRILL_BANK keys
+    buildSubjectPicker();
+    bind("btnStart", start);
+    bind("btnSaveSubjects", saveSubjects);
+    bind("btnAdd", addResult);
+    bind("btnCoach", brother);
+    bind("btnBrother", brother);
+    bind("btnReset", resetAll);
+    bind("btnBackToDash", backToDash);
+    bind("btnTurbito", () => { if(currentSubject && typeof window.startTurbito==="function") window.startTurbito(currentSubject); });
+    bind("btnSubmit", submitDrill);
+    bind("btnExitDrill", closeDrill);
 
-    // Default date
+    $("dAnswer")?.addEventListener("keydown",(e)=>{ if(e.key==="Enter") submitDrill(); });
+
+    // defaults
+    focus($("name"));
     const mDate = $("mDate");
     if(mDate && !mDate.value) mDate.value = new Date().toISOString().slice(0,10);
 
-    // Wire buttons safely
-    safeBind("btnStart", startFlow);
-    safeBind("btnAdd", addResultFlow);
-    safeBind("btnCoach", coachFlow);
-    safeBind("btnReset", resetAll);
-
-    safeBind("btnBackToDash", () => {
-      $("subjectHub")?.classList.add("hidden");
-      $("dash")?.classList.remove("hidden");
-      currentSubject = null;
-    });
-
-    safeBind("btnTurbito", () => {
-      if(currentSubject) launchTurbito(currentSubject);
-    });
-
-    safeBind("btnSubmit", submitCoachDrillAnswer);
-    safeBind("btnExitDrill", closeCoachDrill);
-
-    $("dAnswer")?.addEventListener("keydown", (e)=>{
-      if(e.key==="Enter") submitCoachDrillAnswer();
-    });
-
-    ensureSubjectPicker();
-    ensureCoachBox();
     render();
   });
 
-  function safeBind(id, fn){
+  function bind(id, fn){
     const el = $(id);
     if(!el) return;
     el.addEventListener("click", (e)=>{
       try{ fn(e); }
       catch(err){
         console.error(err);
-        // visible error so it never feels “dead”
-        ensureCoachBox().innerHTML = `<div class="muted">Coach error: check console. (${esc(err.message || err)})</div>`;
+        setBrother(`<div class="muted">Error: ${esc(err.message||String(err))}</div>`);
       }
     });
   }
 
-  // ---------- UI injection (no HTML edits) ----------
-  function ensureSubjectPicker(){
-    const setup = $("setup");
-    if(!setup) return;
+  function buildSubjectPicker(){
+    const picker = $("subjectPicker");
+    if(!picker) return;
 
-    if($("subjectPicker")) return;
-
-    const picker = document.createElement("div");
-    picker.id = "subjectPicker";
-    picker.style.marginTop = "12px";
-    picker.style.paddingTop = "10px";
-    picker.style.borderTop = "1px solid rgba(0,0,0,.08)";
-
-    const rows = SUBJECT_CATALOGUE.map(s=>`
-      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;">
-        <input type="checkbox" data-subject="${esc(s)}">
-        <span style="flex:1">${esc(s)}</span>
+    const subjects = Object.keys(window.DRILL_BANK || {}).sort();
+    picker.innerHTML = subjects.map(s => `
+      <div class="pickRow">
+        <label><input type="checkbox" data-subject="${esc(s)}"> ${esc(s)}</label>
         <select data-level="${esc(s)}">
           <option value="H">Higher</option>
           <option value="O">Ordinary</option>
         </select>
-      </label>
+      </div>
     `).join("");
-
-    picker.innerHTML = `
-      <h3 style="margin:0 0 8px">Choose your subjects</h3>
-      <div class="muted" style="margin-bottom:8px">Tick only what you do. Pick Higher/Ordinary.</div>
-      ${rows}
-      <button id="btnSaveSubjects" class="primary" style="margin-top:10px">Save subjects</button>
-    `;
-
-    setup.appendChild(picker);
-
-    $("btnSaveSubjects")?.addEventListener("click", ()=>{
-      const checks = [...picker.querySelectorAll('input[type="checkbox"][data-subject]')];
-      const chosen = checks.filter(c=>c.checked).map(c=>c.getAttribute("data-subject"));
-      if(!chosen.length){
-        alert("Choose at least one subject.");
-        return;
-      }
-
-      const pickedArr = chosen.map(sub=>{
-        const sel = picker.querySelector(`select[data-level="${CSS.escape(sub)}"]`);
-        const lvl = (sel?.value || "H").toUpperCase()==="O" ? "O" : "H";
-        return { subject: sub, level: lvl };
-      });
-
-      state.profile.picked = pickedArr;
-      saveState();
-      render();
-    });
   }
 
-  function ensureCoachBox(){
-    const dash = $("dash");
-    if(!dash) return null;
-
-    let box = dash.querySelector("#coachBox");
-    if(box) return box;
-
-    // Put it under the first .card (Add result card)
-    const card = dash.querySelector(".card") || dash;
-    box = document.createElement("div");
-    box.id = "coachBox";
-    box.style.marginTop = "12px";
-    box.innerHTML = `<div class="muted">Coach ready. Add results, then press Coach.</div>`;
-    card.appendChild(box);
-    return box;
+  function setBrother(html){
+    const box = $("coachBox");
+    if(box) box.innerHTML = html;
   }
 
-  function ensureTurbitoHeader(subject){
-    const hub = $("subjectHub");
-    const container = $("turbitoContainer");
-    if(!hub || !container) return;
-
-    let head = $("turbitoHeader");
-    if(!head){
-      head = document.createElement("div");
-      head.id = "turbitoHeader";
-      head.style.margin = "10px 0 10px";
-      head.style.transform = "skewX(-6deg)";
-      head.style.fontWeight = "900";
-      head.style.fontSize = "22px";
-      hub.insertBefore(head, container);
-    }
-
-    let tag = $("turbitoTagline");
-    if(!tag){
-      tag = document.createElement("div");
-      tag.id = "turbitoTagline";
-      tag.className = "muted";
-      tag.style.marginTop = "4px";
-      tag.style.transform = "skewX(-6deg)";
-      head.appendChild(tag);
-    }
-
-    head.textContent = "TURBITO ⚡";
-    head.appendChild(tag);
-    tag.textContent = pickTagline(subject);
-  }
-
-  function pickTagline(subject){
-    const lines = [
-      "Fast hands. Clean brain. No blanks.",
-      "Reps win grades. One more round.",
-      "Beat your best. Then beat the paper.",
-      "Speed + accuracy = marks recovered.",
-      "No fear. Just reps."
-    ];
-    return lines[Math.floor(Math.random()*lines.length)];
-  }
-
-  // ---------- render ----------
-  function render(){
-    const hasName = !!(state.profile.name || "").trim();
-    const hasSubjects = !!picked().length;
-
-    $("setup")?.classList.toggle("hidden", hasName && hasSubjects);
-    $("dash")?.classList.toggle("hidden", !(hasName && hasSubjects));
-
-    $("whoName") && ($("whoName").textContent = state.profile.name || "—");
-
-    renderOverall();
-    renderTiles();
-  }
-
-  function startFlow(){
+  function start(){
     const name = ($("name")?.value || "").trim();
-    if(!name){
-      alert("Enter a nickname first.");
-      focus($("name"));
-      return;
-    }
+    if(!name){ alert("Enter a nickname first."); focus($("name")); return; }
     state.profile.name = name;
-    saveState();
+    state.profile.goal = ($("goal")?.value || "").trim();
+    save();
     render();
   }
 
-  function renderOverall(){
-    const subs = pickedSubjects();
-    const all = [];
-    subs.forEach(s => (state.results[s] || []).forEach(r=>all.push(r.score)));
-    const overall = all.length ? Math.round(avg(all)) : null;
+  function saveSubjects(){
+    const picker = $("subjectPicker");
+    const checks = [...picker.querySelectorAll('input[type="checkbox"][data-subject]')];
+    const chosen = checks.filter(c=>c.checked).map(c=>c.getAttribute("data-subject"));
+    if(!chosen.length){ alert("Choose at least one subject."); return; }
 
-    $("overallAvg") && ($("overallAvg").textContent = overall===null ? "—" : `${overall}%`);
-    $("overallBand") && ($("overallBand").textContent = overall===null ? "—" : band(overall));
+    state.profile.picked = chosen.map(sub=>{
+      const sel = picker.querySelector(`select[data-level="${CSS.escape(sub)}"]`);
+      const lvl = (sel?.value || "H").toUpperCase()==="O" ? "O" : "H";
+      return { subject: sub, level: lvl };
+    });
+
+    save();
+    render();
   }
 
-  function starsForSubject(subject){
-    const drills = (state.drillScores?.[subject] || []).slice(-5);
-    const drillAvg = drills.length ? Math.round(avg(drills.map(d=>d.pct))) : null;
+  function render(){
+    const hasName = !!(state.profile.name||"").trim();
+    const hasSubs = !!(state.profile.picked||[]).length;
 
-    const res = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    const trend = (res.length>=2) ? (res[res.length-1].score - res[0].score) : 0;
+    $("setup")?.classList.toggle("hidden", hasName && hasSubs);
+    $("dash")?.classList.toggle("hidden", !(hasName && hasSubs));
 
-    let score = 0;
-    if(drillAvg !== null) score += Math.round(clamp(drillAvg,0,100)/100*7);
-    score += Math.round(clamp((trend/15)*3, -3, 3));
-    score = clamp(score, 0, 10);
+    $("whoName") && ($("whoName").textContent = state.profile.name || "—");
 
-    return "★".repeat(score) + "☆".repeat(10-score);
+    // subject dropdown for result entry
+    const mSubject = $("mSubject");
+    if(mSubject){
+      mSubject.innerHTML = (state.profile.picked||[]).map(p=>`<option value="${esc(p.subject)}">${esc(p.subject)} (${p.level})</option>`).join("");
+    }
+
+    renderOverall();
+    renderTiles();
+
+    setBrother(`<div class="muted">The Brother is here. Add results. Do reps. Then we polish.</div>`);
+  }
+
+  function renderOverall(){
+    const picked = state.profile.picked || [];
+    const all = [];
+    picked.forEach(p => (state.results[p.subject]||[]).forEach(r=>all.push(r.score)));
+    const overall = all.length ? Math.round(avg(all)) : null;
+
+    $("overallAvg") && ($("overallAvg").textContent = overall===null ? "—" : overall+"%");
+    $("overallBand") && ($("overallBand").textContent = overall===null ? "—" : band(overall));
+
+    // marks recovered sum of subject deltas
+    let rec = 0;
+    picked.forEach(p=>{
+      const arr = (state.results[p.subject]||[]).slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+      if(arr.length>=2) rec += (arr[arr.length-1].score - arr[0].score);
+    });
+    $("marksRecovered") && ($("marksRecovered").textContent = String(rec));
   }
 
   function renderTiles(){
@@ -287,265 +182,119 @@
     if(!tiles) return;
     tiles.innerHTML = "";
 
-    picked().forEach(({subject, level})=>{
-      const arr = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    (state.profile.picked||[]).forEach(p=>{
+      const subject = p.subject;
+      const level = p.level;
+      const arr = (state.results[subject]||[]).slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
       const avgScore = arr.length ? Math.round(avg(arr.map(r=>r.score))) : null;
       const last = arr.length ? arr[arr.length-1] : null;
-
-      const fill = avgScore===null ? 0 : clamp(avgScore,0,100);
-      const stars = starsForSubject(subject);
-      const accent = levelAccent(level);
 
       const tile = document.createElement("div");
       tile.className = "tile";
       tile.innerHTML = `
         <div class="tileTop">
           <div>
-            <div class="tileName">${esc(subject)} <span style="font-weight:900;color:${accent}">[${level}]</span></div>
+            <div class="tileName">${esc(subject)} <span style="font-weight:900;color:${level==="O"?"#2b6cff":"#ff3fa6"}">[${level}]</span></div>
             <div class="tileMeta">${last ? `Last: ${esc(last.date)} • ${last.score}%` : "No results yet"}</div>
-            <div class="tileMeta">${esc(stars)}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-weight:900;font-size:22px">${avgScore===null ? "—" : `${avgScore}%`}</div>
-            <div class="tileMeta">${avgScore===null ? "" : band(avgScore)}</div>
+            <div style="font-weight:900;font-size:22px">${avgScore===null?"—":avgScore+"%"}</div>
           </div>
         </div>
-        <div class="bar"><div class="fill" style="width:${fill}%"></div></div>
+        <div class="bar"><div class="fill" style="width:${avgScore===null?0:clamp(avgScore,0,100)}%"></div></div>
       `;
       tile.addEventListener("click", ()=> openSubject(subject));
       tiles.appendChild(tile);
     });
   }
 
-  // ---------- subject hub ----------
   function openSubject(subject){
     currentSubject = subject;
-
     $("dash")?.classList.add("hidden");
     $("subjectHub")?.classList.remove("hidden");
 
-    const level = pickedLevel(subject);
-    const accent = levelAccent(level);
-
+    const level = (state.profile.picked||[]).find(x=>x.subject===subject)?.level || "H";
     $("subjectTitle") && ($("subjectTitle").textContent = `${subject} (${level==="O"?"Ordinary":"Higher"})`);
 
-    // Clear differentiation: Turbito header + tagline
-    ensureTurbitoHeader(subject);
+    $("hubNote") && ($("hubNote").innerHTML =
+      `<strong>The Brother:</strong> This is where you stop bleeding marks. Reps first. Then polish.`
+    );
 
-    // Accent the Turbito button (no CSS edits)
-    const bT = $("btnTurbito");
-    if(bT) bT.style.background = accent;
-
-    // Turbito loads
-    launchTurbito(subject);
-
-    // Coach quick status line (so it never feels dead)
-    ensureCoachBox().innerHTML = `<div class="muted">Coach ready for ${esc(subject)}. Add results + do drills to earn deeper feedback.</div>`;
+    renderCharts(subject);
   }
 
-  // ---------- add result ----------
-  function addResultFlow(){
-    if(!picked().length){
-      alert("Choose subjects first.");
-      return;
-    }
-    const subject = promptSubjectByName();
+  function backToDash(){
+    $("subjectHub")?.classList.add("hidden");
+    $("dash")?.classList.remove("hidden");
+    currentSubject = null;
+  }
+
+  function addResult(){
+    const subject = $("mSubject")?.value;
     if(!subject) return;
 
     const date = ($("mDate")?.value || "").trim() || new Date().toISOString().slice(0,10);
-    const raw = prompt(`Enter ${subject} overall % (0–100)`, "");
-    if(raw === null) return;
-    const score = toNum(raw);
-    if(score === null || score < 0 || score > 100){
-      alert("Please enter a number between 0 and 100.");
-      return;
-    }
+    const score = toNum(($("mScore")?.value || "").trim());
+    if(score===null || score<0 || score>100){ alert("Score must be 0–100"); return; }
 
     state.results[subject] = state.results[subject] || [];
     state.results[subject].push({ date, score: Math.round(score) });
-    state.results[subject].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    saveState();
-
-    ensureCoachBox().innerHTML = `<div class="muted">Saved ${esc(subject)}: ${esc(date)} • ${Math.round(score)}%. Now press <strong>Coach</strong>.</div>`;
+    state.results[subject].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+    save();
 
     renderOverall();
     renderTiles();
+
+    setBrother(`<div><strong>The Brother:</strong> result saved for ${esc(subject)}.</div><div class="muted">Now press The Brother. We find the leak.</div>`);
+    if(currentSubject===subject) renderCharts(subject);
   }
 
-  function promptSubjectByName(){
-    const names = pickedSubjects();
-    const raw = prompt(`Type a subject name:\n\n${names.join(", ")}`, names[0] || "");
-    if(raw === null) return null;
-    const t = raw.trim().toLowerCase();
-    const found = names.find(n => n.toLowerCase() === t);
-    if(!found){
-      alert("Type it exactly (e.g. Spanish).");
-      return null;
-    }
-    return found;
+  // ===== Leak model (weighted by markValue*freq on essentials) =====
+  function recordAttempt(subject, item, correct){
+    const tags = item.tags && item.tags.length ? item.tags : ["general"];
+    const mv = Number(item.markValue || 3);
+    const fq = Number(item.freq || 3);
+    const w = mv * fq;
+
+    state.tagPerf = state.tagPerf || {};
+    state.tagPerf[subject] = state.tagPerf[subject] || {};
+
+    tags.forEach(tag=>{
+      const t = state.tagPerf[subject][tag] || { attempts:0, correct:0, wSum:0 };
+      t.attempts += 1;
+      if(correct) t.correct += 1;
+      t.wSum += w;
+      state.tagPerf[subject][tag] = t;
+    });
+
+    save();
   }
 
-  // ---------- coach ----------
-  async function coachFlow(){
-    const box = ensureCoachBox();
-
-    // immediate feedback so it NEVER feels dead
-    box.innerHTML = `<div class="muted">Coach is awake. Choosing subject…</div>`;
-
-    const subject = promptSubjectByName();
-    if(!subject){
-      box.innerHTML = `<div class="muted">Coach: cancelled.</div>`;
-      return;
-    }
-
-    const results = (state.results[subject] || []).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-    if(results.length < 2){
-      box.innerHTML = `<div class="muted">Add at least <strong>two</strong> results for ${esc(subject)} first (trend needed).</div>`;
-      return;
-    }
-
-    // Determine drill leverage from banks you actually have: rapid / structured / cloze
-    const bank = window.DRILL_BANK?.[subject];
-    const hasStructured = !!(bank?.structured && bank.structured.length);
-    const hasCloze = !!(bank?.cloze && bank.cloze.length);
-
-    const heuristic = heuristicFocus(subject, results);
-    const pack = buildCoachDrillPack(subject, heuristic);
-
-    const aiAllowed = aiUnlockedFor(subject, results);
-
-    box.innerHTML = `
-      <div><strong>${esc(subject)} Coach</strong></div>
-      <div class="muted">${aiAllowed ? "Coach (AI) is allowed now — earned." : `Coach (AI) enters at ≥ ${AI_MIN_SCORE_FOR_AI}% OR drill avg ≥ ${AI_MIN_DRILL_AVG_FOR_AI}%.`}</div>
-      <div style="margin-top:8px"><strong>Biggest mark leak:</strong> ${esc(heuristic.focus)}</div>
-      <div class="muted">${esc(heuristic.feedback)}</div>
-      <div class="muted" style="margin-top:8px">Next drill type: ${hasStructured ? "Structured (scaffold)" : hasCloze ? "Cloze" : "Rapid"}.</div>
-      <div style="margin-top:10px">
-        <button id="btnStartCoachDrill" class="primary">Start Coach Drill (10)</button>
-      </div>
-    `;
-
-    setTimeout(()=>{
-      document.getElementById("btnStartCoachDrill")?.addEventListener("click", ()=> startCoachDrill(subject, pack));
-    }, 0);
-
-    if(aiAllowed){
-      try{
-        box.innerHTML = `<div class="muted">Coach is thinking…</div>`;
-        const ai = await runAiCoach(subject, results, heuristic);
-        if(ai){
-          box.innerHTML = `
-            <div><strong>${esc(subject)} Coach (AI)</strong></div>
-            <div style="margin-top:8px"><strong>Biggest mark leak:</strong> ${esc(ai.focus || heuristic.focus)}</div>
-            <div class="muted">${esc(ai.feedback || heuristic.feedback)}</div>
-            <div style="margin-top:10px">
-              <button id="btnStartCoachDrill" class="primary">Start Coach Drill (10)</button>
-            </div>
-          `;
-          setTimeout(()=>{
-            document.getElementById("btnStartCoachDrill")?.addEventListener("click", ()=> startCoachDrill(subject, pack));
-          }, 0);
-
-          markAiUsed(subject);
-        }
-      }catch(e){
-        console.warn(e);
-        box.innerHTML = `<div class="muted">AI connection issue. Try again.</div>`;
-      }
-    }
-  }
-
-  function heuristicFocus(subject, arr){
-    const last = arr[arr.length-1];
-    const prev = arr[arr.length-2];
-    const delta = last.score - prev.score;
-
-    let focus = "Structure + timing";
-    let feedback = "";
-
-    if(delta < 0){
-      focus = "Stability: remove silly drops";
-      feedback = `Down ${Math.abs(delta)} points. Next win: no blanks, clear steps, repeat a routine.`;
-    }else if(delta > 0){
-      focus = "Consistency: repeat what worked";
-      feedback = `Up ${delta}. Now repeat what worked and tighten one weakness with reps.`;
-    }else{
-      feedback = "Flat. Choose one weakness and do 10 reps, then re-test.";
-    }
-
-    if(["Spanish","French","German"].includes(subject)){
-      focus = "Accuracy + high-value structures";
-      feedback = "Language: stop losing marks to basics first, then add one higher-value structure per answer. " + feedback;
-    }else if(subject==="Maths"){
-      focus = "Method marks + no blanks";
-      feedback = "Maths: write the line even if unsure—method marks save you. " + feedback;
-    }else if(subject==="English"){
-      focus = "Point → evidence → explain";
-      feedback = "English: keep paragraphs tight and evidence-based. " + feedback;
-    }
-
-    return { focus, feedback };
-  }
-
-  // IMPORTANT: uses your DRILL_BANK categories: rapid / structured / cloze  :contentReference[oaicite:2]{index=2}
-  function buildCoachDrillPack(subject){
-    const bank = window.DRILL_BANK?.[subject];
-    let items = [];
-
-    if(bank?.structured?.length){
-      // Convert structured scaffold items into drill prompts
-      items = bank.structured.map(x => ({
-        q: x.q + "  (Use scaffold)",
-        a: ["*"],
-        scaffold: x.scaffold
-      }));
-    } else if(bank?.cloze?.length){
-      // Convert cloze into prompts
-      items = bank.cloze.map(x => ({
-        q: x.text,
-        a: x.blanks || ["*"],
-        cloze: true
-      }));
-    } else if(bank?.rapid?.length){
-      items = bank.rapid.map(x => ({ q:x.q, a:x.a || ["*"] }));
-    }
-
-    // Always 10
-    items = shuffle(items).slice(0, 10);
-
-    if(!items.length){
-      items = [
-        { q:`${subject}: define a key term`, a:["*"] },
-        { q:`${subject}: give an example`, a:["*"] },
-        { q:`${subject}: explain in 2 lines`, a:["*"] },
-        { q:`${subject}: one marking scheme phrase`, a:["*"] },
-        { q:`${subject}: common mistake to avoid`, a:["*"] },
-        { q:`${subject}: command word meaning`, a:["*"] },
-        { q:`${subject}: mini checklist item`, a:["*"] },
-        { q:`${subject}: short timed answer`, a:["*"] },
-        { q:`${subject}: key term #2`, a:["*"] },
-        { q:`${subject}: quick summary`, a:["*"] }
-      ];
-    }
-
-    return { title: `${subject} • Coach Drill`, items };
+  function computeLeaks(subject){
+    const perf = state.tagPerf?.[subject] || {};
+    const list = Object.entries(perf).map(([tag, t])=>{
+      const acc = t.attempts ? (t.correct / t.attempts) : 0;
+      const avgW = t.attempts ? (t.wSum / t.attempts) : 1;
+      const leak = (1-acc) * avgW;
+      return { tag, leak, acc, attempts:t.attempts };
+    });
+    list.sort((a,b)=>b.leak-a.leak);
+    return list;
   }
 
   function lastDrillAvg(subject, n=5){
-    const drills = (state.drillScores?.[subject] || []).slice(-n);
-    if(!drills.length) return null;
-    return Math.round(avg(drills.map(d=>d.pct)));
+    const d = (state.drillScores?.[subject]||[]).slice(-n);
+    return d.length ? Math.round(avg(d.map(x=>x.pct))) : null;
   }
 
-  function aiUnlockedFor(subject, resultsArr){
-    if(resultsArr.length < AI_MIN_RESULTS) return false;
+  function aiEligible(subject){
+    const results = (state.results[subject]||[]);
+    if(results.length < AI_MIN_RESULTS) return false;
 
-    const latest = resultsArr[resultsArr.length-1];
-    const drillAvg = lastDrillAvg(subject, 5);
+    const latest = results.slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))).at(-1)?.score ?? 0;
+    const dAvg = lastDrillAvg(subject, 5);
 
-    const earned = (latest.score >= AI_MIN_SCORE_FOR_AI) ||
-      (drillAvg !== null && drillAvg >= AI_MIN_DRILL_AVG_FOR_AI);
-
+    const earned = (latest >= AI_MIN_SCORE_FOR_AI) || (dAvg!==null && dAvg >= AI_MIN_DRILL_AVG_FOR_AI);
     if(!earned) return false;
 
     const now = Date.now();
@@ -555,157 +304,283 @@
     return typeof window.classifyAnswer === "function";
   }
 
-  function markAiUsed(subject){
+  function markAi(subject){
     state.aiLastAt = state.aiLastAt || {};
     state.aiLastAt[subject] = Date.now();
-    saveState();
+    save();
   }
 
-  async function runAiCoach(subject, arr, fallback){
-    const last = arr[arr.length-1];
-    const prev = arr[arr.length-2];
+  function pickDrillItems(subject, level, tag){
+    const bank = window.DRILL_BANK?.[subject];
+    if(!bank) return [];
+
+    // flatten into unified items with q+a+tags+weights
+    const pool = [];
+    (bank.rapid||[]).forEach(x=>pool.push({ ...x, q:x.q, a:x.a||["*"] }));
+    (bank.structured||[]).forEach(x=>pool.push({ ...x, q:x.q, a:["*"] }));
+    (bank.cloze||[]).forEach(x=>pool.push({ level:x.level, q:x.text, a:(x.blanks&&x.blanks.length)?x.blanks:["*"], tags:x.tags||["general"], markValue:x.markValue, freq:x.freq }));
+
+    const levelPool = pool.filter(x=>!x.level || x.level===level);
+    const tagged = levelPool.filter(x=>(x.tags||[]).includes(tag));
+
+    const use = tagged.length ? tagged : levelPool;
+    return shuffle(use.slice()).slice(0, DRILL_Q);
+  }
+
+  async function brother(){
+    const subject = currentSubject || $("mSubject")?.value;
+    if(!subject){ alert("Pick a subject."); return; }
+
+    const level = (state.profile.picked||[]).find(x=>x.subject===subject)?.level || "H";
+    const results = (state.results[subject]||[]).slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+    if(results.length < 2){
+      setBrother(`<div class="muted">The Brother: give me two results first. Then I can read the trend.</div>`);
+      return;
+    }
+
+    const leaks = computeLeaks(subject);
+    const top = leaks[0] || { tag:"general", leak:0, acc:0, attempts:0 };
+
+    const items = pickDrillItems(subject, level, top.tag);
+
+    const basicLine = `
+      <div><strong>The Brother • ${esc(subject)}</strong></div>
+      <div class="muted">Most expensive leak: <strong>${esc(top.tag)}</strong> (accuracy ${(top.acc*100).toFixed(0)}%, attempts ${top.attempts}).</div>
+      <div class="muted">We fix that, you stop bleeding marks.</div>
+      <div style="margin-top:10px">
+        <button id="btnStartBrotherDrill" class="primary">Start 5-Rep Fix</button>
+      </div>
+    `;
+    setBrother(basicLine);
+
+    setTimeout(()=>{
+      document.getElementById("btnStartBrotherDrill")?.addEventListener("click", ()=> startDrill(subject, items));
+    },0);
+
+    renderCharts(subject);
+
+    if(aiEligible(subject)){
+      try{
+        const ai = await runAI(subject, results, top.tag);
+        if(ai){
+          setBrother(`
+            <div><strong>The Brother (AI) • ${esc(subject)}</strong></div>
+            <div class="muted"><strong>Leak:</strong> ${esc(ai.focus || top.tag)}</div>
+            <div class="muted">${esc(ai.feedback || "")}</div>
+            <div style="margin-top:10px">
+              <button id="btnStartBrotherDrill" class="primary">Start 5-Rep Fix</button>
+            </div>
+          `);
+          setTimeout(()=>{
+            document.getElementById("btnStartBrotherDrill")?.addEventListener("click", ()=> startDrill(subject, items));
+          },0);
+          markAi(subject);
+        }
+      }catch(e){
+        console.warn(e);
+      }
+    }
+  }
+
+  async function runAI(subject, results, tag){
+    const last = results.at(-1);
+    const prev = results.at(-2);
 
     const task = [
-      "LC PERFORMANCE COACH",
+      "LEAVING CERT COACH (THE BROTHER)",
       `Subject: ${subject}`,
       `Previous: ${prev.date} — ${prev.score}%`,
       `Latest: ${last.date} — ${last.score}%`,
-      "Identify the single biggest mark leak and give warm, practical scaffolding advice.",
+      `Most expensive leak tag: ${tag}`,
+      "Tone: warm, natural, local. Encourage + one sharp line if needed.",
+      "Give: 1) what to fix, 2) how to fix it in 2 steps, 3) one scaffold line.",
       "Return ONLY JSON:",
       "{",
-      '  "focus": "single weakness (short)",',
-      '  "feedback": "max 90 words, warm + specific",',
-      '  "drills": ["2–4 drill prompts"]',
+      '  "focus": "leak in plain words",',
+      '  "feedback": "max 90 words"',
       "}"
     ].join("\n");
 
     const res = await window.classifyAnswer({ task, answer:"", lang:"lc" });
-    if(!res || typeof res !== "object") return null;
-
-    return {
-      focus: String(res.focus || fallback.focus || "—").slice(0,160),
-      feedback: String(res.feedback || fallback.feedback || "—").slice(0,700),
-      drills: Array.isArray(res.drills) ? res.drills.map(x=>String(x)) : []
-    };
+    if(!res || typeof res!=="object") return null;
+    return { focus:String(res.focus||""), feedback:String(res.feedback||"") };
   }
 
-  // ---------- Coach drill modal ----------
-  function startCoachDrill(subject, pack){
-    drillRun = {
-      subject,
-      title: pack.title,
-      items: pack.items.slice(0,10),
-      i: 0,
-      correct: 0,
-      startedAt: Date.now(),
-      wrongs: []
-    };
-
+  // ===== Drill modal =====
+  function startDrill(subject, items){
+    drillRun = { subject, items: items.slice(0,DRILL_Q), i:0, correct:0 };
+    $("dTitle") && ($("dTitle").textContent = `The Brother Drill • ${subject}`);
+    $("dFeedback") && ($("dFeedback").textContent = "");
     $("drillModal")?.classList.remove("hidden");
-    showCoachDrillPrompt();
+    showDrillQ();
   }
 
-  function showCoachDrillPrompt(){
-    if(!drillRun) return;
+  function showDrillQ(){
     const item = drillRun.items[drillRun.i];
-    $("dPrompt") && ($("dPrompt").textContent = `${drillRun.title} • Q${drillRun.i+1}/10: ${item?.q || ""}`);
-    if($("dAnswer")) $("dAnswer").value = "";
+    $("dPrompt").textContent = `Q ${drillRun.i+1}/${DRILL_Q}: ` + (item.q || "");
+    $("dAnswer").value = "";
     focus($("dAnswer"));
   }
 
-  function submitCoachDrillAnswer(){
+  function submitDrill(){
     if(!drillRun) return;
     const item = drillRun.items[drillRun.i];
-    if(!item) return;
 
-    const ans = ($("dAnswer")?.value || "").trim();
+    const ans = ($("dAnswer").value||"").trim();
     if(!ans) return;
 
-    // Cloze: require one of blanks; Structured: accept any (scaffold is feedback)
-    let ok = false;
-    if(item.cloze && Array.isArray(item.a) && item.a.length){
-      ok = item.a.some(b => String(b).trim().toLowerCase() === ans.trim().toLowerCase());
-    }else{
-      ok = true; // scaffold drills accept any attempt
+    let correct = true;
+    if(Array.isArray(item.a) && item.a.length && !(item.a.length===1 && item.a[0]==="*")){
+      correct = item.a.some(x=>String(x).trim().toLowerCase()===ans.toLowerCase());
     }
 
-    if(ok) drillRun.correct++;
-    else drillRun.wrongs.push({ q:item.q, expected:item.a, got:ans });
+    if(correct) drillRun.correct++;
+    recordAttempt(drillRun.subject, item, correct);
+
+    $("dFeedback").textContent = correct ? "✅ Good." : "❌ Not quite. Keep going.";
 
     drillRun.i++;
     if(drillRun.i >= drillRun.items.length){
-      finishCoachDrill();
-      return;
+      finishDrill();
+    }else{
+      setTimeout(showDrillQ, 220);
     }
-
-    showCoachDrillPrompt();
   }
 
-  function finishCoachDrill(){
-    const ms = Date.now() - drillRun.startedAt;
+  function finishDrill(){
     const pct = Math.round((drillRun.correct / drillRun.items.length) * 100);
 
     state.drillScores = state.drillScores || {};
     state.drillScores[drillRun.subject] = state.drillScores[drillRun.subject] || [];
-    state.drillScores[drillRun.subject].push({ date: new Date().toISOString().slice(0,10), pct });
-
-    if(state.drillScores[drillRun.subject].length > 30){
-      state.drillScores[drillRun.subject] = state.drillScores[drillRun.subject].slice(-30);
+    state.drillScores[drillRun.subject].push({ date:new Date().toISOString().slice(0,10), pct });
+    if(state.drillScores[drillRun.subject].length > 40){
+      state.drillScores[drillRun.subject] = state.drillScores[drillRun.subject].slice(-40);
     }
-    saveState();
+    save();
 
-    // Warm scaffold feedback summary
-    const missed = drillRun.wrongs.length;
-    alert(`${drillRun.subject} drill complete: ${pct}% • Time: ${fmtTime(ms)}\nMissed: ${missed}`);
+    closeDrill();
+    renderTiles();
+    renderCharts(drillRun.subject);
 
-    closeCoachDrill();
-    render();
+    setBrother(`<div><strong>The Brother:</strong> ${pct}%.</div><div class="muted">${pct>=80?"Now we’re talking.":"That’s the leak. Fix it again."}</div>`);
   }
 
-  function closeCoachDrill(){
+  function closeDrill(){
     $("drillModal")?.classList.add("hidden");
     drillRun = null;
   }
 
-  // ---------- Turbito ----------
-  function launchTurbito(subject){
-    // Ensure header exists each time
-    ensureTurbitoHeader(subject);
-
-    if(typeof window.startTurbito === "function"){
-      window.startTurbito(subject);
-    }else{
-      $("turbitoContainer") && ($("turbitoContainer").innerHTML = `<p class="muted">Turbito not loaded. Check turbito.js.</p>`);
-    }
+  // ===== Graphs =====
+  function renderCharts(subject){
+    if(typeof Chart !== "function") return;
+    renderResultsChart(subject);
+    renderLeakChart(subject);
+    renderDrillChart(subject);
   }
 
-  // ---------- storage ----------
+  function renderResultsChart(subject){
+    const canvas=$("resultsChart");
+    if(!canvas) return;
+
+    const arr=(state.results[subject]||[]).slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))).slice(-16);
+    const labels=arr.map(r=>(r.date||"").slice(5));
+    const vals=arr.map(r=>r.score);
+
+    if(chartResults) chartResults.destroy();
+    chartResults = new Chart(canvas, {
+      type:"line",
+      data:{ labels, datasets:[{ data:vals, fill:true, tension:0.25, pointRadius:4, borderColor:"#ff3fa6", backgroundColor:"rgba(255,63,166,.18)" }]},
+      options:{ plugins:{ legend:{display:false} }, scales:{ y:{ min:0, max:100 } } }
+    });
+  }
+
+  function renderLeakChart(subject){
+    const canvas=$("leakChart");
+    if(!canvas) return;
+
+    const leaks=computeLeaks(subject).slice(0,5);
+    const labels=leaks.map(x=>x.tag);
+    const vals=leaks.map(x=>Number(x.leak.toFixed(2)));
+
+    if(chartLeaks) chartLeaks.destroy();
+    chartLeaks = new Chart(canvas, {
+      type:"bar",
+      data:{ labels, datasets:[{ data:vals, backgroundColor:["#2b6cff","#ff3fa6","#2ecc71","#f1c40f","#9b59b6"] }]},
+      options:{ plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
+    });
+  }
+
+  function renderDrillChart(subject){
+    const canvas=$("drillChart");
+    if(!canvas) return;
+
+    const ds=(state.drillScores?.[subject]||[]).slice(-20);
+    const labels=ds.map(x=>(x.date||"").slice(5));
+    const vals=ds.map(x=>x.pct);
+
+    if(chartDrills) chartDrills.destroy();
+    chartDrills = new Chart(canvas, {
+      type:"line",
+      data:{ labels, datasets:[{ data:vals, fill:true, tension:0.25, pointRadius:4, borderColor:"#2b6cff", backgroundColor:"rgba(43,108,255,.18)" }]},
+      options:{ plugins:{ legend:{display:false} }, scales:{ y:{ min:0, max:100 } } }
+    });
+  }
+
+  // ===== Leak model helpers =====
+  function recordAttempt(subject, item, correct){
+    const tags = item.tags && item.tags.length ? item.tags : ["general"];
+    const mv = Number(item.markValue || 3);
+    const fq = Number(item.freq || 3);
+    const w = mv * fq;
+
+    state.tagPerf = state.tagPerf || {};
+    state.tagPerf[subject] = state.tagPerf[subject] || {};
+
+    tags.forEach(tag=>{
+      const t = state.tagPerf[subject][tag] || { attempts:0, correct:0, wSum:0 };
+      t.attempts += 1;
+      if(correct) t.correct += 1;
+      t.wSum += w;
+      state.tagPerf[subject][tag] = t;
+    });
+
+    save();
+  }
+
+  function computeLeaks(subject){
+    const perf = state.tagPerf?.[subject] || {};
+    const list = Object.entries(perf).map(([tag, t])=>{
+      const acc = t.attempts ? (t.correct / t.attempts) : 0;
+      const avgW = t.attempts ? (t.wSum / t.attempts) : 1;
+      const leak = (1-acc) * avgW;
+      return { tag, leak, acc, attempts:t.attempts };
+    });
+    list.sort((a,b)=>b.leak-a.leak);
+    return list;
+  }
+
+  // ===== Storage =====
   function fresh(){
-    return { profile:{ name:"", picked:[] }, results:{}, drillScores:{}, aiLastAt:{} };
+    return { profile:{name:"",goal:"",picked:[]}, results:{}, drillScores:{}, tagPerf:{}, aiLastAt:{} };
   }
-
   function loadState(){
     try{
-      const raw = localStorage.getItem(LS_KEY);
+      const raw=localStorage.getItem(LS_KEY);
       if(!raw) return fresh();
-      const s = JSON.parse(raw);
-      s.profile = s.profile || { name:"", picked:[] };
-      s.profile.picked = s.profile.picked || [];
-      s.results = s.results || {};
-      s.drillScores = s.drillScores || {};
-      s.aiLastAt = s.aiLastAt || {};
+      const s=JSON.parse(raw);
+      s.profile=s.profile||{name:"",goal:"",picked:[]};
+      s.profile.picked=s.profile.picked||[];
+      s.results=s.results||{};
+      s.drillScores=s.drillScores||{};
+      s.tagPerf=s.tagPerf||{};
+      s.aiLastAt=s.aiLastAt||{};
       return s;
-    }catch{
-      return fresh();
-    }
+    }catch{ return fresh(); }
   }
-
-  function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
-
+  function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
   function resetAll(){
     if(!confirm("Reset all data on this device?")) return;
     localStorage.removeItem(LS_KEY);
     location.reload();
   }
-
 })();
