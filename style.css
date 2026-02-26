@@ -265,3 +265,4 @@ button:active{ transform: translateY(1px); }
 }
 
 .foot{ text-align:center; margin-top: 14px; }
+.modal.hidden{ display:none !important; }
