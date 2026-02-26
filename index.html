@@ -1,175 +1,141 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LC Performance Coach</title>
-  <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>LC Performance Coach</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
-  <div class="bg"></div>
 
-  <main class="wrap">
-    <header class="top">
-      <div class="brand">
-        <div class="title">LC Performance Coach</div>
-        <div class="subtitle">Train smart. Perform better.</div>
-      </div>
-    </header>
+<div class="bg"></div>
+<div class="crest"></div>
 
-    <!-- SETUP -->
-    <section id="setup" class="card">
-      <div class="row">
-        <button id="btnStart" class="primary">Start</button>
-      </div>
+<div class="app">
 
-      <label class="field">
-        <span>Enter a nickname</span>
-        <input id="name" type="text" autocomplete="nickname" />
-      </label>
+<header>
+  <h1>LC Performance Coach</h1>
+  <p class="tag">Train smart. Perform better.</p>
+</header>
 
-      <label class="field">
-        <span>Goal (optional, e.g. H3 in Spanish)</span>
-        <input id="goal" type="text" />
-      </label>
+<!-- SETUP -->
+<section id="setup" class="card">
+  <h2>Start</h2>
 
-      <div class="divider"></div>
+  <input id="name" placeholder="Enter a nickname">
 
-      <div class="h3">Choose subjects</div>
-      <div class="muted">Tick only what you do. Pick Higher/Ordinary.</div>
-      <div id="subjectPicker" class="picker"></div>
+  <input id="goal" placeholder="Goal (optional, e.g. H3 in Spanish)">
 
-      <div class="row">
-        <button id="btnSaveSubjects" class="primary">Enter</button>
-      </div>
-    </section>
+  <div id="subjectPicker"></div>
 
-    <!-- DASHBOARD -->
-    <section id="dash" class="hidden">
-      <div class="card">
-        <div class="who">Player: <strong id="whoName">—</strong></div>
+  <button id="btnStart" class="primary">Enter</button>
+</section>
 
-        <div class="stats">
-          <div class="stat">
-            <div class="statLabel">Overall</div>
-            <div class="statValue" id="overallAvg">—</div>
-          </div>
-          <div class="stat">
-            <div class="statLabel">Band</div>
-            <div class="statValue" id="overallBand">—</div>
-          </div>
-          <div class="stat">
-            <div class="statLabel">Marks Recovered</div>
-            <div class="statValue" id="marksRecovered">0</div>
-          </div>
-        </div>
+<!-- DASHBOARD -->
+<section id="dash" class="hidden">
 
-        <div class="divider"></div>
+  <div class="stats">
+    <div class="stat">
+      <span>Overall</span>
+      <div id="overallAvg">—</div>
+    </div>
+    <div class="stat">
+      <span>Band</span>
+      <div id="overallBand">—</div>
+    </div>
+  </div>
 
-        <div class="grid2">
-          <label class="field">
-            <span>Add result date</span>
-            <input id="mDate" type="date" />
-          </label>
+  <div class="card">
+    <div class="muted" style="margin-bottom:10px">Player: <strong id="whoName">—</strong></div>
 
-          <label class="field">
-            <span>Subject</span>
-            <select id="mSubject"></select>
-          </label>
+    <h3>Add Result</h3>
+    <input type="date" id="mDate">
 
-          <label class="field">
-            <span>Score % (0–100)</span>
-            <input id="mScore" type="number" min="0" max="100" />
-          </label>
+    <select id="mSubject"></select>
 
-          <div class="row end">
-            <button id="btnAdd" class="primary">Add Result</button>
-            <button id="btnCoach" class="ghost">The Brother</button>
-            <button id="btnReset" class="ghost">Reset</button>
-          </div>
-        </div>
+    <input id="mScore" type="number" min="0" max="100" placeholder="Score % (0–100)">
 
-        <div id="coachBox" class="coachBox"></div>
-      </div>
-
-      <div class="muted tip">Tap a subject tile to open the hub (Coach + graphs + Turbito).</div>
-      <div id="tiles" class="tiles"></div>
-    </section>
-
-    <!-- SUBJECT HUB -->
-    <section id="subjectHub" class="hidden">
-      <div class="card">
-        <div class="hubTop">
-          <button id="btnBackToDash" class="ghost">Back</button>
-          <div class="hubTitle" id="subjectTitle">Subject</div>
-          <div class="hubBtns">
-            <button id="btnBrother" class="primary">The Brother</button>
-            <button id="btnTurbito" class="ghost">Turbito</button>
-          </div>
-        </div>
-
-        <div id="hubNote" class="hubNote"></div>
-
-        <!-- Scrollable graphs -->
-        <div class="scroller">
-          <div class="scrollerInner">
-            <div class="chartCard">
-              <div class="h3">Results Trend</div>
-              <canvas id="resultsChart" height="140"></canvas>
-            </div>
-            <div class="chartCard">
-              <div class="h3">Most Expensive Leaks</div>
-              <div class="muted">From drills + weighted essentials.</div>
-              <canvas id="leakChart" height="140"></canvas>
-            </div>
-            <div class="chartCard">
-              <div class="h3">Drill Streak</div>
-              <div class="muted">Intent earns The Brother.</div>
-              <canvas id="drillChart" height="140"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="h3">Turbito (sidegame)</div>
-        <div class="muted">Fast 5-question reps. Beat your best. Unlock levels.</div>
-
-        <div id="turbitoContainer"></div>
-        <div id="turbitoView"></div>
-      </div>
-    </section>
-
-    <!-- DRILL MODAL -->
-    <div id="drillModal" class="modal hidden">
-      <div class="modalCard">
-        <div class="modalTop">
-          <div class="h3" id="dTitle">Brother Drill</div>
-          <button id="btnExitDrill" class="ghost">Close</button>
-        </div>
-
-        <div id="dPrompt" class="prompt">Press start from The Brother.</div>
-
-        <label class="field">
-          <span>Your answer</span>
-          <input id="dAnswer" type="text" />
-        </label>
-
-        <div id="dFeedback" class="muted"></div>
-
-        <div class="row end">
-          <button id="btnSubmit" class="primary">Submit</button>
-        </div>
-      </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button id="btnAdd" class="primary">Add Result</button>
+      <button id="btnBrother" class="primary">The Brother</button>
+      <button id="btnReset" class="primary">Reset</button>
     </div>
 
-    <footer class="foot muted">Synge Street Games Lab • The Brother • 2026</footer>
-  </main>
+    <div id="coachBox" style="margin-top:12px"></div>
+  </div>
 
-  <script src="drills.js"></script>
-  <script src="ai.js"></script>
-  <script src="script.js"></script>
-  <script src="turbito.js"></script>
+  <div class="muted" style="margin:10px 2px">Tap a subject tile to open the hub.</div>
+  <div id="tiles" class="tiles"></div>
+
+</section>
+
+<!-- SUBJECT HUB -->
+<section id="subjectHub" class="hidden card">
+  <h2 id="subjectTitle">Subject</h2>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <button id="btnBackToDash">Back</button>
+    <button id="btnBrotherHub" class="primary">The Brother</button>
+    <button id="btnTurbito" class="primary">Turbito</button>
+  </div>
+
+  <!-- Horizontal scroll graphs -->
+  <div class="graphScroller">
+    <div class="graphRow">
+      <div class="graphCard">
+        <h3>Results Trend</h3>
+        <canvas id="resultsChart" height="140"></canvas>
+      </div>
+      <div class="graphCard">
+        <h3>Leak Map</h3>
+        <p class="muted" style="margin-top:-8px">Most expensive leaks from drills.</p>
+        <canvas id="leakChart" height="140"></canvas>
+      </div>
+      <div class="graphCard">
+        <h3>Drill Streak</h3>
+        <canvas id="drillChart" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Turbito levels will render here -->
+  <div id="turbitoContainer"></div>
+
+  <!-- Active Turbito level view -->
+  <div id="turbitoView" style="display:none;"></div>
+
+</section>
+
+<!-- DRILL MODAL -->
+<div id="drillModal" class="hidden modal">
+  <div class="card modalCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h3 id="dTitle" style="margin:0">Brother Drill</h3>
+      <button id="btnExitDrill">Close</button>
+    </div>
+
+    <div id="dPrompt" style="margin:12px 0;font-weight:900"></div>
+
+    <input id="dAnswer" placeholder="Your answer">
+
+    <div id="dFeedback" class="muted" style="margin-top:6px"></div>
+
+    <button id="btnSubmit" class="primary" style="margin-top:10px">Submit</button>
+  </div>
+</div>
+
+<footer>
+  © Synge Street CBS 2026 · Imagination and Perseverance
+</footer>
+
+</div>
+
+<script src="ai.js"></script>
+<script src="drills.js"></script>
+<script src="script.js"></script>
+<script src="turbito.js"></script>
+
 </body>
 </html>
