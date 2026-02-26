@@ -58,7 +58,31 @@
   // UI wiring
   document.addEventListener("DOMContentLoaded", () => {
 document.getElementById("drillModal")?.classList.add("hidden");
-    // build subject picker UI from DRILL_BANK keys
+    
+  ["btnStart","btnSaveSubjects","btnEnter","enterBtn","startBtn"].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.type = "button";
+  });
+
+  const bindAny = (ids, fn) => {
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.addEventListener("click", (e)=>{
+        e.preventDefault();
+        try{ fn(e); }catch(err){ console.error(err); }
+      });
+    });
+  };
+
+  bindAny(["btnSaveSubjects","btnEnter","enterBtn"], saveSubjects);
+  bindAny(["btnStart","startBtn","btnStartGame"], start);
+
+  // build subject picker UI from DRILL_BANK keys
+  buildSubjectPicker();
+  bind("btnStart", start);
+  ...
+});    // build subject picker UI from DRILL_BANK keys
     buildSubjectPicker();
     bind("btnStart", start);
     bind("btnSaveSubjects", saveSubjects);
