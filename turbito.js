@@ -1,13 +1,13 @@
-/* turbito.js — Turbito (REAL) — uses drills.js banks
+/* turbito.js — Turbito sidegame (5Q)
    - 10 levels, lock/unlock
-   - 10 questions per run
-   - Score = time + 30s per error/blank (lower is better)
-   - Uses DRILL_BANK[subject].rapid first, then build/strength/exam fallback
+   - 5 questions per run
+   - uses DRILL_BANK[subject].rapid filtered by level (H/O)
 */
 
 (function(){
 
 const STORAGE_KEY = "TURBITO_V2";
+const RUN_Q = 5;
 
 function load(){ return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
 function save(data){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
@@ -21,10 +21,9 @@ function ensureSubject(subject){
   return data;
 }
 
-const DEFAULT_THRESHOLDS = [220,205,195,185,175,165,155,145,135,125]; // seconds target per level
+const DEFAULT_THRESHOLDS = [220,205,195,185,175,165,155,145,135,125];
 
 function thresholdsFor(subject){
-  // Optional tuning per subject
   const MAP = {
     Spanish: [200,185,175,165,155,145,135,125,115,105],
     Maths:   [230,215,205,195,185,175,165,155,145,135],
@@ -50,20 +49,37 @@ function isCorrect(raw, answers){
   if(!n) return false;
   return (answers||[]).some(a=>{
     const aa = String(a||"").trim();
-    if(aa === "*") return true; // accept any non-empty for open prompts
+    if(aa === "*") return true;
     return norm(aa) === n;
   });
 }
 
-function pickQuestions(subject, n=10){
+function getLevelForSubject(subject){
+  // read from coach profile if present
+  try{
+    const coach = JSON.parse(localStorage.getItem("SYNGE_LC_COACH_MAIN_V6") || "null")
+      || JSON.parse(localStorage.getItem("SYNGE_LC_COACH_V5A") || "null")
+      || JSON.parse(localStorage.getItem("SYNGE_LC_COACH_V5") || "null");
+    const picked = coach?.profile?.picked || [];
+    return (picked.find(x=>x.subject===subject)?.level) || "H";
+  }catch{
+    return "H";
+  }
+}
+
+function pickQuestions(subject, n=RUN_Q){
+  const level = getLevelForSubject(subject);
   const bank = window.DRILL_BANK?.[subject];
   let pool = [];
 
   if(bank){
-    if(Array.isArray(bank.rapid) && bank.rapid.length) pool = bank.rapid.slice();
-    else if(Array.isArray(bank.build) && bank.build.length) pool = bank.build.slice();
-    else if(Array.isArray(bank.strength) && bank.strength.length) pool = bank.strength.slice();
-    else if(Array.isArray(bank.exam) && bank.exam.length) pool = bank.exam.slice();
+    if(Array.isArray(bank.rapid) && bank.rapid.length){
+      pool = bank.rapid.filter(x => !x.level || x.level === level);
+    } else if(Array.isArray(bank.structured) && bank.structured.length){
+      pool = bank.structured.filter(x => !x.level || x.level === level).map(x => ({ q:x.q, a:["*"] }));
+    } else if(Array.isArray(bank.cloze) && bank.cloze.length){
+      pool = bank.cloze.filter(x => !x.level || x.level === level).map(x => ({ q:x.text, a: (x.blanks && x.blanks.length) ? x.blanks : ["*"] }));
+    }
   }
 
   if(!pool.length){
@@ -72,12 +88,7 @@ function pickQuestions(subject, n=10){
       { q:`${subject}: one core formula/fact`, a:["*"] },
       { q:`${subject}: list 3 key terms`, a:["*"] },
       { q:`${subject}: one exam phrase that earns marks`, a:["*"] },
-      { q:`${subject}: one mistake to avoid`, a:["*"] },
-      { q:`${subject}: 2-line explanation of a concept`, a:["*"] },
-      { q:`${subject}: name 2 command words`, a:["*"] },
-      { q:`${subject}: one worked step`, a:["*"] },
-      { q:`${subject}: one checklist item`, a:["*"] },
-      { q:`${subject}: one revision tip`, a:["*"] },
+      { q:`${subject}: one mistake to avoid`, a:["*"] }
     ];
   }
 
@@ -97,7 +108,6 @@ window.startTurbito = function(subject){
   container.innerHTML = "";
   view.style.display = "none";
 
-  // Build a simple level view INSIDE turbitoView (no CSS changes)
   view.innerHTML = `
     <div class="card" style="margin-top:10px">
       <h3 id="tbTitle"></h3>
@@ -139,14 +149,14 @@ window.startTurbito = function(subject){
   function startLevel(subject, level, target){
     active = {
       subject, level, target,
-      qs: pickQuestions(subject, 10),
+      qs: pickQuestions(subject, RUN_Q),
       i: 0,
       errors: 0,
       startedAt: Date.now()
     };
     view.style.display = "block";
     document.getElementById("tbTitle").innerText = `${subject} · Level ${level}`;
-    document.getElementById("tbStats").innerText = `Q 1/10`;
+    document.getElementById("tbStats").innerText = `Q 1/${RUN_Q}`;
     document.getElementById("tbInput").value = "";
     renderQ();
     document.getElementById("tbInput").focus();
@@ -155,7 +165,7 @@ window.startTurbito = function(subject){
   function renderQ(){
     const q = active.qs[active.i];
     document.getElementById("tbQuestion").innerText = q.q;
-    document.getElementById("tbStats").innerText = `Q ${active.i+1}/10`;
+    document.getElementById("tbStats").innerText = `Q ${active.i+1}/${RUN_Q}`;
 
     const submit = ()=>{
       const val = document.getElementById("tbInput").value.trim();
